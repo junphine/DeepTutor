@@ -39,6 +39,7 @@ import {
   MimoGlyph,
   OpenClawGlyph,
   OpencodeGlyph,
+  QwenPawGlyph,
 } from "@/components/agents/agent-icons";
 import type { ServiceName } from "@/features/settings/store/SettingsStore";
 import type { SettingsAccess } from "@/features/settings/navigation/settings-access";
@@ -401,6 +402,18 @@ const AGENT_CHILDREN: SettingsLeaf[] = [
     tile: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
     adminOnly: true,
   },
+  {
+    key: "agent-qwenpaw-acp",
+    href: "/settings#agent-qwenpaw-acp",
+    label: { zh: "QwenPaw ACP", en: "QwenPaw ACP" },
+    blurb: {
+      zh: "DeepTutor 调用本机 QwenPaw ACP 时的模型、推理强度与运行参数。",
+      en: "Model, reasoning effort, and run params for the local QwenPaw ACP.",
+    },
+    icon: QwenPawGlyph as unknown as LucideIcon,
+    tile: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+    adminOnly: true,
+  },
 ];
 
 export const SETTINGS_CATEGORIES: SettingsCategory[] = [
@@ -567,6 +580,7 @@ const STORAGE_PATHS: Record<string, string> = {
   "agent-kimi": "data/user/settings/subagent.json",
   "agent-opencode": "data/user/settings/subagent.json",
   "agent-mimo": "data/user/settings/subagent.json",
+  "agent-qwenpaw-acp": "data/user/settings/subagent.json",
 };
 
 export function storagePathFor(

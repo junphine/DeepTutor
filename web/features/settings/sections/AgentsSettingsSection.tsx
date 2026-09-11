@@ -27,6 +27,9 @@ const OpenClawAgentSettingsPage = () => (
 const DeepSeekHarnessAgentSettingsPage = () => (
   <SubagentSettingsEditor kind="deepseek_harness" />
 );
+const QwenPawACPSettingsPage = () => (
+  <SubagentSettingsEditor kind="qwenpaw_acp" />
+);
 
 const AGENT_SECTIONS = [
   { key: "agent-claude-code", Component: ClaudeCodeAgentSettingsPage },
@@ -41,6 +44,10 @@ const AGENT_SECTIONS = [
   {
     key: "agent-deepseek-harness",
     Component: DeepSeekHarnessAgentSettingsPage,
+  },
+  {
+    key: "agent-qwenpaw-acp",
+    Component: QwenPawACPSettingsPage,
   },
 ] as const;
 

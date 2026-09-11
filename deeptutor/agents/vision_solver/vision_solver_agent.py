@@ -135,8 +135,7 @@ class VisionSolverAgent(BaseAgent):
             system_prompt="",
             messages=messages,
             temperature=temperature,
-            model=self.vision_model or self.get_model(),
-            verbose=False,
+            model=self.vision_model or self.get_model(),            
         ):
             chunks.append(chunk)
         return "".join(chunks)

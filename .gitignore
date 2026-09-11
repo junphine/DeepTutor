@@ -7,6 +7,8 @@
 # ============================================
 # Runtime data (knowledge bases, tutorbot workspaces, memory, etc.)
 data/
+rag_storage/
+.omo/
 /multi-user/
 run_code_workspace/
 deeptutor/agents/question/reference_papers/
@@ -185,6 +187,9 @@ web/playwright-report/
 auto-save-list
 tramp
 .\#*
+
+.omo
+.codegraph
 
 # ============================================
 # Operating System Files

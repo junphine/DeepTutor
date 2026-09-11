@@ -83,6 +83,17 @@ _DEEPSEEK_HARNESS_EFFORTS = (
     "ultra",
 )
 
+_QWENPAW_HARNESS_EFFORTS = (
+    "none",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+    "ultra",
+)
+
 
 @dataclass(slots=True)
 class ModelOption:
@@ -374,6 +385,11 @@ async def _deepseek_harness_options() -> BackendOptions:
         "deepseek_harness", "DeepSeek Harness", _DEEPSEEK_HARNESS_EFFORTS
     )
 
+async def _qwenpaw_acp_options() -> BackendOptions:
+    return await _free_text_options(
+        "qwenpaw_acp", "QwenPaw ACP", _QWENPAW_HARNESS_EFFORTS
+    )
+
 
 # One provider per backend kind — the discovery order is the settings order.
 _PROVIDERS: dict[str, Callable[..., Awaitable[BackendOptions]]] = {
@@ -387,6 +403,7 @@ _PROVIDERS: dict[str, Callable[..., Awaitable[BackendOptions]]] = {
     "hermes_remote": _hermes_remote_options,
     "openclaw": _openclaw_options,
     "deepseek_harness": _deepseek_harness_options,
+    "qwenpaw_acp": _qwenpaw_acp_options,
 }
 
 

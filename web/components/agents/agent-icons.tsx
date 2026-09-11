@@ -183,6 +183,12 @@ export function DeepSeekGlyph({ size = 16, ...props }: GlyphProps) {
   );
 }
 
+export function QwenPawGlyph({ size = 16, ...props }: GlyphProps) {
+  return (
+    <OfficialAssetGlyph src="/agent-icons/qwenpaw.svg" size={size} {...props} />
+  );
+}
+
 // A connected partner: a filled heart in the Partners accent, so a consulted
 // partner reads as a companion (not a CLI) everywhere a connected agent appears.
 export function PartnerGlyph({ size = 16, ...props }: GlyphProps) {
@@ -214,6 +220,7 @@ export function agentGlyph(kind: string | undefined): AgentGlyph | null {
   if (kind === "hermes_remote") return HermesGlyph;
   if (kind === "openclaw") return OpenClawGlyph;
   if (kind === "deepseek_harness") return DeepSeekGlyph;
+  if (kind === "qwenpaw_acp") return QwenPawGlyph;
   if (kind === "partner") return PartnerGlyph;
   return null;
 }

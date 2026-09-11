@@ -169,6 +169,15 @@ const KIND_FEATURES: Record<string, KindFeatures> = {
     thinking: false,
     forwardImages: true, // local paths are named in the prompt
   },
+  qwenpaw_acp: {
+    effort: true,
+    systemPrompt: true,
+    permissionMode: false,
+    codexSandbox: false,
+    autoApprove: false,
+    thinking: true,
+    forwardImages: true,
+  },
 };
 
 const FALLBACK_FEATURES: KindFeatures = KIND_FEATURES.claude_code;
@@ -183,6 +192,7 @@ const DISPLAY_NAMES: Record<string, string> = {
   hermes_remote: "Hermes Agent (remote)",
   openclaw: "OpenClaw",
   deepseek_harness: "DeepSeek Harness",
+  qwenpaw_acp: "QwenPaw ACP",
 };
 
 // Per-kind flavor for the system-prompt section: how the instruction reaches
@@ -219,6 +229,10 @@ const SYSTEM_PROMPT_HINT: Record<string, Lang> = {
   deepseek_harness: {
     zh: "该指令会前缀在每个新 DeepSeek Harness 会话的第一条消息上。",
     en: "The instruction is prefixed to the first message in each new DeepSeek Harness session.",
+  },
+  qwenpaw_acp: {
+    zh: "该指令会前缀在每个新 QwenPaw ACP 会话的第一条消息上。",
+    en: "The instruction is prefixed to the first message in each new QwenPaw ACP session.",
   },
 };
 

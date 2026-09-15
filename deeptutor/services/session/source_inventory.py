@@ -1,9 +1,9 @@
 """Branch-isolated, cumulative source inventory for the chat capability.
 
-The chat pipeline shows the LLM an "Attached Sources" manifest each turn so
-it can decide whether to call ``read_source(id)`` for full text. Historically
-this manifest only listed sources the user attached in the *current* turn —
-so the model forgot anything uploaded in earlier turns unless re-attached.
+The chat pipeline shows the LLM an "Attached Sources" manifest each turn.
+Historically this manifest only listed sources the user attached in the
+*current* turn — so the model forgot anything uploaded in earlier turns unless
+re-attached.
 
 This module materialises the manifest as a **session-cumulative inventory**:
 
@@ -11,8 +11,7 @@ This module materialises the manifest as a **session-cumulative inventory**:
   in the manifest, just like before.
 * Sources attached in *prior* turns on the active branch's ancestor chain
   (the "historical" set) get a compact one-line row: id, name, kind, size,
-  and the turn ordinal where they first appeared. The LLM can call
-  ``read_source(id)`` to load full text when the question warrants it.
+  and the turn ordinal where they first appeared.
 
 Both sets dedupe by source id; fresh always wins on collision. Branch
 isolation is enforced by walking ``parent_message_id`` from the active
@@ -23,8 +22,9 @@ The output is decoupled from the rest of ``turn_runtime``:
     inventory = await build_inventory(store, ..., fresh_*=...)
     manifest_text, source_index = render_manifest(inventory)
 
-``source_index`` is the per-turn ``{source_id: full_text}`` map handed to
-``ReadSourceTool`` via tool-call kwargs injection.
+``source_index`` is the per-turn ``{source_id: full_text}`` map consumed by the
+Context Investigator. The answer loop receives that investigation and does not
+mount ``ReadSourceTool`` itself.
 """
 
 from __future__ import annotations
@@ -41,8 +41,8 @@ logger = logging.getLogger(__name__)
 
 # Per-source text-preview caps. Fresh sources get a meaningful preview so
 # the model can answer simple "is this the right one?" questions without
-# read_source. Historical sources surface only their identity — the model
-# pays the read_source cost only when it actually needs them.
+# reading the full source. Historical sources surface only their identity —
+# the investigator pays the full-text cost only when it needs a source.
 MANIFEST_PREVIEW_CHARS_FRESH = 2000
 # Image attachments flow through the multimodal block path; never list them.
 _IMAGE_MIME_PREFIX = "image/"
@@ -61,6 +61,12 @@ class SourceEntry:
     # within the active branch's lineage. Fresh sources use the **current**
     # turn's ordinal so the manifest can label them consistently.
     first_seen_turn: int
+    # Set (and full_text empty) when the source exists but its text could not
+    # be served — for an attachment whose extraction produced nothing. The
+    # manifest renders the reason so the model can tell the learner *why* a
+    # file is not quotable instead of silently dropping it or asking for a
+    # blind re-upload (#1438 expected behavior 6).
+    availability_note: str = ""
 
     @property
     def char_count(self) -> int:
@@ -83,7 +89,7 @@ class SourceInventory:
     def add(self, entry: SourceEntry) -> None:
         if not entry.sid:
             return
-        if not entry.full_text.strip():
+        if not entry.full_text.strip() and not entry.availability_note:
             return
         existing_pos = self._index.get(entry.sid)
         if existing_pos is None:
@@ -176,15 +182,17 @@ async def build_inventory(
 def render_manifest(inv: SourceInventory) -> tuple[str, dict[str, str]]:
     """Render the inventory into (manifest_text, source_index).
 
-    ``manifest_text`` is the human/LLM-readable block injected at the tail
-    of the chat system prompt. ``source_index`` maps each source id to its
-    full extracted text and is handed to ``ReadSourceTool`` so the LLM can
-    read on demand.
+    ``manifest_text`` is the human/LLM-readable block injected into both the
+    Context Investigator and the chat prompt. ``source_index`` maps each source
+    id to its full extracted text and is consumed by the investigator's
+    ``ReadSourceTool``.
     """
     if inv.is_empty():
         return "", {}
 
-    source_index: dict[str, str] = {sid: e.full_text for sid, e in _iter_sid_entries(inv)}
+    source_index: dict[str, str] = {
+        sid: e.full_text for sid, e in _iter_sid_entries(inv) if e.full_text.strip()
+    }
     rendered_rows: list[str] = []
     for entry in inv.entries:
         rendered_rows.append(_render_row(entry))
@@ -194,8 +202,9 @@ def render_manifest(inv: SourceInventory) -> tuple[str, dict[str, str]]:
         "An index of the sources the user has attached in this conversation. "
         "Rows with a `preview` field were attached **this turn**; rows marked "
         "`previously attached (turn N)` were uploaded in earlier turns and show "
-        "only their identity. Their full text can be loaded on demand when a "
-        "source is relevant. Refer to sources by name; never invent source ids."
+        "only their identity. Relevant full text is examined by the Context "
+        "Investigator. Refer to sources by name; never invent source ids or "
+        "call a file/PDF tool to reopen them."
     )
     return header + "\n\n" + "\n\n".join(rendered_rows), source_index
 
@@ -229,6 +238,14 @@ def _format_size(char_count: int) -> str:
 
 
 def _render_row(entry: SourceEntry) -> str:
+    if entry.availability_note:
+        identity = (
+            f"- id={entry.sid}  type={entry.kind}  name={entry.name!r}  "
+            f"source: previously attached (turn {entry.first_seen_turn})"
+        )
+        if entry.fresh:
+            identity = f"- id={entry.sid}  type={entry.kind}  name={entry.name!r}"
+        return f"{identity}\n  note: {entry.availability_note}"
     if entry.fresh:
         preview = _clip_preview(entry.full_text)
         return f"- id={entry.sid}  type={entry.kind}  name={entry.name!r}\n  preview: {preview!r}"
@@ -305,7 +322,28 @@ def _add_fresh(
             continue
         text = str(record.get("extracted_text", "") or "")
         att_id = str(record.get("id", "") or "").strip()
-        if not text.strip() or not att_id:
+        if not att_id:
+            continue
+        if not text.strip():
+            # The file is real but its text could not be extracted (scanned
+            # pages, an unsupported format, a failed parse). Surface the
+            # reason instead of silently dropping the attachment: the model
+            # can then tell the learner what happened and whether re-uploading
+            # is worth another try, rather than a blind "please upload again".
+            inv.add(
+                SourceEntry(
+                    sid=f"at-{att_id}",
+                    kind="attachment",
+                    name=str(record.get("filename") or "Untitled file"),
+                    full_text="",
+                    fresh=True,
+                    first_seen_turn=current_turn_ordinal,
+                    availability_note=(
+                        "text extraction produced no content for this file "
+                        "(scanned or unsupported format); it cannot be quoted"
+                    ),
+                )
+            )
             continue
         inv.add(
             SourceEntry(
@@ -455,6 +493,23 @@ async def _collect_from_user_message(
             continue
         text = str(att.get("extracted_text") or "")
         if not text.strip():
+            # Same as the fresh path: an earlier turn's file whose extraction
+            # produced nothing still gets a manifest row, with the reason
+            # attached, so the failure is visible on every later turn.
+            inv.add(
+                SourceEntry(
+                    sid=sid,
+                    kind="attachment",
+                    name=str(att.get("filename") or "Untitled file"),
+                    full_text="",
+                    fresh=False,
+                    first_seen_turn=turn_ordinal,
+                    availability_note=(
+                        "text extraction produced no content for this file "
+                        "(scanned or unsupported format); it cannot be quoted"
+                    ),
+                )
+            )
             continue
         inv.add(
             SourceEntry(
@@ -639,6 +694,72 @@ async def _load_lineage(
         safety -= 1
     chain.reverse()
     return chain
+
+
+# ----- Prior-image collection (#1438) -------------------------------------
+
+
+# Images are the one attachment kind with no cross-turn path: the manifest
+# deliberately excludes them (they reach a vision model as multimodal blocks
+# on the upload turn only), so from the second turn onward the model could not
+# see an image it was just discussing. The turn executor re-attaches what this
+# collector returns; the cap keeps a long image-heavy conversation from
+# re-sending unbounded payloads every turn, and lives in system settings
+# beside the other chat-attachment policy — a deployment whose model or
+# bandwidth cannot afford the re-send sets it to 0.
+
+
+async def collect_prior_image_attachments(
+    store: SessionStoreProtocol,
+    *,
+    session_id: str,
+    leaf_message_id: int | None,
+    exclude_urls: set[str] | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    """Return this conversation's earlier image attachments, most recent first.
+
+    Walks the active branch's persisted user messages — the same lineage the
+    manifest's historical walk uses — and collects every image entry that
+    carries an attachment-store URL, deduplicated by URL. The turn executor
+    re-attaches the result (URL-only; the multimodal layer resolves the bytes
+    from the attachment store at request time). Text attachments are not
+    collected here: they are re-served by the inventory's own historical walk.
+    """
+    if limit is None:
+        from deeptutor.services.config import get_prior_image_reinject_limit
+
+        limit = get_prior_image_reinject_limit()
+    if limit <= 0:
+        return []
+    excluded_urls = exclude_urls or set()
+    collected: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    lineage = await _load_lineage(store, session_id, leaf_message_id)
+    for msg in reversed(lineage):
+        if msg.get("role") != "user":
+            continue
+        for att in msg.get("attachments") or []:
+            mime = str(att.get("mime_type", "")).lower()
+            url = str(att.get("url", "") or "").strip()
+            if not url or url in seen_urls or url in excluded_urls:
+                continue
+            if not mime.startswith(_IMAGE_MIME_PREFIX):
+                continue
+            seen_urls.add(url)
+            collected.append(
+                {
+                    "id": str(att.get("id", "") or ""),
+                    "type": "image",
+                    "url": url,
+                    "base64": "",
+                    "filename": str(att.get("filename", "") or ""),
+                    "mime_type": str(att.get("mime_type", "") or ""),
+                }
+            )
+            if len(collected) >= limit:
+                return collected
+    return collected
 
 
 # ----- Per-type resolvers shared by fresh + historical paths --------------

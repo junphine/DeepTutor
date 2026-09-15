@@ -23,6 +23,7 @@ from deeptutor.capabilities.mastery.tools import MASTERY_TOOL_NAMES
 from deeptutor.capabilities.protocol import PromptBlock
 from deeptutor.core.context import UnifiedContext
 from deeptutor.services.prompt.lookup import prompt_text as _prompt_text
+from deeptutor.tools.mastery_nav import MASTERY_NAV_TOOL_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -143,12 +144,20 @@ class MasteryLoopCapability:
 
     name = "mastery"
     owned_tools = (*MASTERY_TOOL_NAMES, "read_source")
-    # Declared to the dispatcher so a switch that shares a round with a write
-    # runs first and the write lands on the path the model switched *to*. Every
-    # call in a round is bound before any of them runs, so without this a
-    # ``mastery_switch`` + ``mastery_build`` round rebuilt the map of the path
-    # the conversation was leaving.
-    rebinding_tools = tuple(_PATH_BINDING_TOOLS)
+    # Declared to the dispatcher so a call that repoints the turn runs first
+    # and the rest of the round lands on the new target. Every call in a round
+    # is bound before any of them runs, so without this a ``mastery_switch`` +
+    # ``mastery_build`` round rebuilt the map of the path the conversation was
+    # leaving.
+    #
+    # ``mastery_mode`` belongs here for the same reason and was missing it. It
+    # repoints the turn's mode (``_bind_active_mode``, below), and every
+    # mode-gated tool reads ``_mastery_session_mode`` from the bind — so in the
+    # round the prompt explicitly asks for, "switch to study and get on with
+    # it", ``mastery_quiz`` still saw ``outline`` and was refused. The tutor
+    # had already written the lead-in, the card never appeared, and the turn
+    # carried on: one of the ways a question ends up answered in prose.
+    rebinding_tools = tuple(_PATH_BINDING_TOOLS | {"mastery_mode"})
 
     def is_active(self, context: UnifiedContext) -> bool:
         return bool(context.metadata.get("mastery_mode"))
@@ -223,6 +232,15 @@ class MasteryLoopCapability:
                 # rest of the turn operates on, and this keeps the tool from
                 # needing to know a turn context exists.
                 updated["_bind_active_path"] = _path_binder(context)
+            return updated
+        if tool_name in MASTERY_NAV_TOOL_NAMES:
+            # The navigation tools stay mounted inside a mastery session —
+            # sending the learner to a *different* topic is a real thing to
+            # want mid-course. What they could not see is which topic this
+            # turn is already tutoring, so a hand-off card could point back at
+            # this very conversation's topic (#1412).
+            updated = dict(kwargs)
+            updated["_tutoring_path_id"] = path_id
             return updated
         return kwargs
 

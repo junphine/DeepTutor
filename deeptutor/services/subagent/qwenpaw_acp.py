@@ -36,7 +36,11 @@ from deeptutor.services.subagent.types import (
     DetectResult,
     SubagentEvent,
 )
-
+from deeptutor.services.subagent.process import (
+    not_found_detail,
+    probe_version,
+    stream_process_lines,
+)
 logger = logging.getLogger(__name__)
 
 
@@ -57,17 +61,17 @@ class QwenPawACPBackend(SubagentBackend):
 
     kind = "qwenpaw_acp"
     display_name = "QwenPaw ACP"
-    cli_command = "D:/IDE/qwenpaw/Scripts/python.exe -m qwenpaw"
+    cli_command = "qwenpaw"
 
     async def detect(self) -> DetectResult:
-        ok, text = await _probe_version([self.cli_command, "--version"])
+        ok, text = await probe_version([self.cli_command, "--version"])
         sdk = _qwenpaw_available()
         return DetectResult(
             kind=self.kind,
             display_name=self.display_name,
             available=ok or sdk,
             version=text if ok else ("qwenpaw Python package" if sdk else ""),
-            detail="" if ok or sdk else _not_found_detail(text, "qwenpaw CLI / Python package not found"),
+            detail="" if ok or sdk else not_found_detail(text, "qwenpaw CLI / Python package not found"),
         )
 
     def _build_acp_command(
@@ -103,7 +107,7 @@ class QwenPawACPBackend(SubagentBackend):
         config = config or BackendConfig()
         sid = session_id or f"deeptutor-{uuid.uuid4().hex}"
 
-        cmd = self._build_acp_question_command(question, config=config, images=images)
+        cmd = self._build_acp_question_command(question, cwd=cwd, config=config, images=images)
         result = ConsultResult(session_id=sid)
         answer_parts: list[str] = []
         reasoning_parts: list[str] = []
@@ -181,10 +185,12 @@ class QwenPawACPBackend(SubagentBackend):
         return result
 
     def _build_acp_question_command(
-        self, question: str, *, config: BackendConfig, images: list[str] | None = None
+        self, question: str, *, cwd: str,config: BackendConfig, images: list[str] | None = None
     ) -> list[str]:
         """Build command for asking a question; prompt passed via stdin."""
         cmd = [self.cli_command, "acp"]
+        if cwd:
+            cmd += ["--workspace",cwd]
         if config.model:
             cmd += ["--model", config.model]
         if config.effort:
@@ -264,29 +270,6 @@ class QwenPawACPBackend(SubagentBackend):
         env = os.environ.copy()
         # Ensure PATH is available; qwenpaw must be on PATH or configured
         return env
-
-
-async def _probe_version(cmd: list[str]) -> tuple[bool, str]:
-    """Probe qwenpaw version via CLI.
-
-    Returns (ok, text) where ok=True if the command succeeds.
-    """
-    try:
-        proc = asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10.0)
-        text = stdout.decode("utf-8", errors="replace").strip()
-        ok = proc.returncode == 0 and text != ""
-        return ok, text
-    except Exception:
-        return False, ""
-
-
-def _not_found_detail(text: str, fallback: str) -> str:
-    if not text or text.strip() == "":
-        return fallback
-    return f"{fallback}: {text.strip()}"
 
 
 def _qwenpaw_available() -> bool:

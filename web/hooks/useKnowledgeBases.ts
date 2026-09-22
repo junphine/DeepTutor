@@ -17,6 +17,7 @@ import {
   retryKnowledgeBase as retryKbApi,
   updatePendingIndexingPolicy as updatePendingIndexingPolicyApi,
   setDefaultKnowledgeBase as setDefaultKbApi,
+  updateKnowledgeBaseConfig as updateKbConfigApi,
   type KnowledgeTaskResponse,
   type IndexingLLMSelection,
   type KnowledgeUploadPolicy,
@@ -178,6 +179,7 @@ export function useKnowledgeBases() {
   const createKb = useCallback(
     async (params: {
       name: string;
+      description?: string;
       provider: string;
       files: File[];
       pageindexMode?: "flash" | "standard";
@@ -326,6 +328,14 @@ export function useKnowledgeBases() {
     [history, load, progress],
   );
 
+  const updateKbConfig = useCallback(
+    async (kbName: string, config: Record<string, unknown>) => {
+      await updateKbConfigApi(kbName, config);
+      await load({ force: true, showSpinner: false });
+    },
+    [load],
+  );
+
   const connectObsidian = useCallback(
     async (params: { name: string; vaultPath: string }) => {
       await connectObsidianApi(params);
@@ -347,6 +357,7 @@ export function useKnowledgeBases() {
   const connectLightRagServer = useCallback(
     async (params: {
       name: string;
+      description?: string;
       serverUrl: string;
       apiKey?: string;
       mode?: string;
@@ -370,6 +381,7 @@ export function useKnowledgeBases() {
   const connectWeKnora = useCallback(
     async (params: {
       name: string;
+      description?: string;
       serverUrl: string;
       apiKey: string;
       knowledgeBaseId: string;
@@ -416,6 +428,7 @@ export function useKnowledgeBases() {
     updatePendingIndexingPolicy,
     retry,
     deleteKb,
+    updateKbConfig,
     connectObsidian,
     connectLinkedFolder,
     connectLightRagServer,

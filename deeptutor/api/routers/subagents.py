@@ -47,6 +47,8 @@ class ConnectSubagentRequest(BaseModel):
     # For the partner backend (``agent_kind == "partner"``): which partner to
     # consult. Ignored by local and remote agent backends.
     partner_id: str = ""
+    description: str = ""
+    agent_id: str = ""
 
 
 class SubagentSettingsPayload(BaseModel):
@@ -121,6 +123,7 @@ async def list_connections():
                 "cwd": meta.get("cwd", ""),
                 "partner_id": meta.get("partner_id", ""),
                 "description": meta.get("description", ""),
+                "agent_id": meta.get("agent_id", ""),
                 "created_at": meta.get("created_at"),
                 "updated_at": meta.get("updated_at"),
             }
@@ -175,7 +178,8 @@ async def create_connection(payload: ConnectSubagentRequest):
     try:
         manager = current_kb_manager()
         entry = manager.register_subagent_connection(
-            name, agent_kind, cwd=resolved_cwd, partner_id=partner_id
+            name, agent_kind, cwd=resolved_cwd, partner_id=partner_id,
+            description=payload.description, agent_id=payload.agent_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -189,6 +193,8 @@ async def create_connection(payload: ConnectSubagentRequest):
         "agent_kind": entry["agent_kind"],
         "cwd": entry["cwd"],
         "partner_id": entry.get("partner_id", ""),
+        "description": entry.get("description", ""),
+        "agent_id": entry.get("agent_id", ""),
     }
 
 
@@ -240,6 +246,7 @@ async def message_connection(name: str, payload: SubagentMessageRequest):
     kind = str(meta.get("agent_kind") or "")
     cwd = str(meta.get("cwd") or "")
     partner_id = str(meta.get("partner_id") or "")
+    agent_id = str(meta.get("agent_id") or "")
     backend = get_backend(kind)
     if backend is None:
         raise HTTPException(status_code=400, detail=f"Unknown agent kind: {kind!r}")
@@ -262,7 +269,7 @@ async def message_connection(name: str, payload: SubagentMessageRequest):
                     cwd=cwd or None,
                     session_id=resume_id,
                     config=config,
-                    partner_id=partner_id or None,
+                    partner_id=partner_id or agent_id,
                 )
                 await queue.put(("done", res))
             except Exception as exc:  # pragma: no cover - defensive

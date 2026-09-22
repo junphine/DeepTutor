@@ -1906,6 +1906,7 @@ async def set_default_kb(kb_name: str):
 
 class ConnectObsidianRequest(BaseModel):
     name: str
+    description: str = ""
     vault_path: str
 
 
@@ -1924,7 +1925,7 @@ async def connect_obsidian_vault(payload: ConnectObsidianRequest):
     try:
         folder = assert_path_allowed(vault_path)
         manager = get_kb_manager()
-        entry = manager.register_obsidian_vault(name, str(folder))
+        entry = manager.register_obsidian_vault(name, str(folder), payload.description)
         return {"status": "connected", "name": name, "vault_path": entry["vault_path"]}
     except ValueError as e:
         # Missing/invalid path, disallowed location, or a name clash → 400.
@@ -1978,6 +1979,7 @@ class ProbeFolderRequest(BaseModel):
 
 class ConnectFolderRequest(BaseModel):
     name: str
+    description: str = ""
     folder_path: str
     rag_provider: str = DEFAULT_PROVIDER
 
@@ -2034,6 +2036,7 @@ async def connect_linked_folder_route(payload: ConnectFolderRequest):
             str(folder),
             result.provider,
             stats=stats,
+            description=payload.description
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -2063,6 +2066,7 @@ class ConnectLightRagServerRequest(BaseModel):
     server_url: str
     api_key: str = ""
     search_mode: str = ""
+    description: str = ""
 
 
 class ProbeWeKnoraRequest(BaseModel):
@@ -2076,6 +2080,7 @@ class ConnectWeKnoraRequest(BaseModel):
     server_url: str
     api_key: str
     knowledge_base_id: str
+    description: str = ""
 
 
 @router.post("/knowledge-bases/probe-lightrag-server")
@@ -2144,6 +2149,7 @@ async def connect_lightrag_server_route(payload: ConnectLightRagServerRequest):
             result.base_url,
             api_key=api_key,
             search_mode=search_mode,
+            description=payload.description
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -2213,6 +2219,7 @@ async def connect_weknora_route(payload: ConnectWeKnoraRequest):
             result.base_url,
             payload.api_key or "",
             result.knowledge_base_id,
+            description=payload.description
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -2979,6 +2986,7 @@ async def create_knowledge_base(
     search_mode: str = Form(""),
     rel_paths: list[str] = Form(None),
     indexing_llm: str = Form(""),
+    description: str = Form(""),
 ):
     """Create a new knowledge base and initialize it with files."""
     try:
@@ -3063,6 +3071,8 @@ async def create_knowledge_base(
         if name in manager.config.get("knowledge_bases", {}):
             manager.config["knowledge_bases"][name]["rag_provider"] = rag_provider
             manager.config["knowledge_bases"][name]["needs_reindex"] = False
+            if description:
+                manager.config["knowledge_bases"][name]["description"] = description
             if rag_provider == PAGEINDEX_OSS_PROVIDER and pageindex_mode:
                 manager.config["knowledge_bases"][name]["pageindex_mode"] = pageindex_mode
             if search_mode:

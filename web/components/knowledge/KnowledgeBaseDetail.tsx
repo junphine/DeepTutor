@@ -67,6 +67,10 @@ interface KnowledgeBaseDetailProps {
   onSetDefault: (kbName: string) => Promise<void>;
   onDelete: (kbName: string) => Promise<void>;
   onClearHistory: (kbName: string) => void;
+  onSaveConfig: (
+    kbName: string,
+    config: Record<string, unknown>,
+  ) => Promise<void>;
   onBack?: () => void;
 }
 
@@ -99,6 +103,7 @@ export default function KnowledgeBaseDetail({
   onSetDefault,
   onDelete,
   onClearHistory,
+  onSaveConfig,
   onBack,
 }: KnowledgeBaseDetailProps) {
   const { t } = useTranslation();
@@ -217,6 +222,11 @@ export default function KnowledgeBaseDetail({
                   kb={kb}
                   isReindexingLocally={isReindexingLocally}
                 />
+                {kb.metadata?.description && (
+                    <span className="text-[12px] italic text-[var(--muted-foreground)]">
+                    — {kb.metadata?.description}
+                  </span>
+                )}
               </div>
               <p className="mt-1 text-[12px] text-[var(--muted-foreground)]">
                 {provider}
@@ -331,6 +341,11 @@ export default function KnowledgeBaseDetail({
                   }
                   onDelete={() =>
                     kb.read_only ? Promise.resolve() : onDelete(kb.name)
+                  }
+                  onSave={(config) =>
+                    kb.read_only
+                      ? Promise.resolve()
+                      : onSaveConfig(kb.name, config)
                   }
                 />
               )}

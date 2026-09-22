@@ -59,7 +59,7 @@ class SubagentCapability(KnowledgeCapability):
         # budget — see ``_FINISH_HEADROOM``.
         context.runtime.min_loop_rounds = budget + _FINISH_HEADROOM
         return PromptBlock(
-            "subagent", _system_text(language, conn["name"], budget, conn.get("kind", ""))
+            "subagent", _system_text(language, conn["name"], budget, conn.get("kind", ""), conn.get("description", ""))
         )
 
     def augment_kwargs(
@@ -107,6 +107,7 @@ class SubagentCapability(KnowledgeCapability):
             "kind": conn["kind"],
             "cwd": conn.get("cwd") or "",
             "partner_id": conn.get("partner_id") or "",
+            "agent_id": conn.get("agent_id") or "",
             "name": conn["name"],
             "budget": _resolve_budget(context),
             "config": config,
@@ -159,11 +160,14 @@ def _resolve_budget(context: UnifiedContext) -> int:
     return load_subagent_settings().consult_budget
 
 
-def _system_text(language: str, name: str, budget: int, kind: str = "") -> str:
+def _system_text(language: str, name: str, budget: int, kind: str = "", description: str = "") -> str:
     from deeptutor.services.subagent import PARTNER_BACKEND_KIND
 
     is_partner = kind == PARTNER_BACKEND_KIND
     zh = str(language or "en").lower().startswith("zh")
+    desc_line = f"\n- 它的描述：{description}" if description and zh else (
+        f"\n- Description: {description}" if description else ""
+    )
     if zh:
         if is_partner:
             framing = (
@@ -179,10 +183,11 @@ def _system_text(language: str, name: str, budget: int, kind: str = "") -> str:
             )
         return (
             f"{framing}\n\n"
+            f"{desc_line}\n"
             f"- 本轮最多可向它提问 {budget} 次；每次结果会告诉你还剩几次。它会在本轮内记住你"
-            f"之前的提问，所以可以层层追问。\n"
+            f"之前的提问，所以可以层层追问。\n"            
             f"- 当你掌握了足够信息后，停止调用该工具，用你自己的口吻直接回答用户——"
-            f"不要假借它的身份或第一人称转述它的话。"
+            f"不要假借它的身份或第一人称转述它的话。\n"
         )
     if is_partner:
         framing = (
@@ -202,12 +207,13 @@ def _system_text(language: str, name: str, budget: int, kind: str = "") -> str:
         )
     return (
         f"{framing}\n\n"
+        f"{desc_line}\n"
         f"- You may consult it at most {budget} time(s) this turn; each result tells "
         f"you how many remain. It remembers your earlier questions this turn, so you "
-        f"can drill down.\n"
+        f"can drill down.\n"        
         f"- Once you have enough, stop calling the tool and answer the user directly "
         f"in your own voice — never impersonate it or relay its words in the first "
-        f"person."
+        f"person.\n"
     )
 
 

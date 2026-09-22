@@ -230,7 +230,6 @@ export default function WorkspaceSidebar() {
         <>
           <ProfileLink collapsed={collapsed} />
           <AdminLink collapsed={collapsed} />
-          <LogoutButton collapsed={collapsed} />
         </>
       )}
     />

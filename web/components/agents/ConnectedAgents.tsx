@@ -272,6 +272,8 @@ function ConnectModal({
   const [nameTouched, setNameTouched] = useState(false);
   const [cwd, setCwd] = useState("");
   const [partnerId, setPartnerId] = useState(partners[0]?.partner_id ?? "");
+  const [description, setDescription] = useState("");
+  const [defaultAgentId, setDefaultAgentId] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -312,8 +314,8 @@ function ConnectModal({
         isPartner
           ? { name: trimmed, agent_kind: PARTNER_KIND, partner_id: partnerId }
           : isRemote
-            ? { name: trimmed, agent_kind: kind }
-            : { name: trimmed, agent_kind: kind, cwd: cwd.trim() },
+            ? { name: trimmed, agent_kind: kind, description: description.trim(), agent_id: defaultAgentId.trim() }
+            : { name: trimmed, agent_kind: kind, cwd: cwd.trim(), description: description.trim(), agent_id: defaultAgentId.trim() },
       );
       onConnected();
     } catch (e) {
@@ -321,7 +323,7 @@ function ConnectModal({
     } finally {
       setSubmitting(false);
     }
-  }, [name, kind, cwd, isPartner, isRemote, partnerId, existingNames, onConnected, tr]);
+  }, [name, kind, cwd, isPartner, isRemote, partnerId, description, defaultAgentId, existingNames, onConnected, tr]);
 
   return (
     <div
@@ -432,6 +434,45 @@ function ConnectModal({
                 className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-[12px] text-[var(--foreground)] outline-none focus:border-[var(--ring)]"
               />
             </div>
+          )}
+
+          {!isPartner && (
+            <>
+              <div>
+                <label className="mb-1.5 block text-[12px] font-medium text-[var(--foreground)]">
+                  {tr({
+                    zh: "描述",
+                    en: "Description",
+                  })}
+                </label>
+                <input
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder={tr({
+                    zh: "例如：用于代码审查的 Claude Code 实例",
+                    en: "e.g. Claude Code instance for code reviews",
+                  })}
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[13px] text-[var(--foreground)] outline-none focus:border-[var(--ring)]"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-[12px] font-medium text-[var(--foreground)]">
+                  {tr({
+                    zh: "Agent ID（可选）",
+                    en: "Agent ID (optional)",
+                  })}
+                </label>
+                <input
+                  value={defaultAgentId}
+                  onChange={(e) => setDefaultAgentId(e.target.value)}
+                  placeholder={tr({
+                    zh: "例如：my-claude-code-agent",
+                    en: "e.g. my-claude-code-agent",
+                  })}
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 font-mono text-[12px] text-[var(--foreground)] outline-none focus:border-[var(--ring)]"
+                />
+              </div>
+            </>
           )}
 
           {isPartner && (

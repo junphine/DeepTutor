@@ -150,7 +150,7 @@ class ConsultSubagentTool(BaseTool):
                 session_id=state.get("session_id"),
                 config=spec.get("config"),
                 images=image_paths or None,
-                partner_id=spec.get("partner_id") or None,
+                partner_id=spec.get("partner_id") or spec.get("agent_id"),
             )
         except Exception as exc:  # pragma: no cover - defensive: surface, don't crash the turn
             logger.warning("consult_subagent failed: %s", exc, exc_info=True)

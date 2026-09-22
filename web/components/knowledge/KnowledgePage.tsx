@@ -65,6 +65,7 @@ export default function KnowledgePage() {
     updatePendingIndexingPolicy,
     retry,
     deleteKb,
+    updateKbConfig,
     connectObsidian,
     connectLinkedFolder,
     connectLightRagServer,
@@ -192,6 +193,7 @@ export default function KnowledgePage() {
   const handleCreate = useCallback(
     async (params: {
       name: string;
+      description?: string;
       provider: string;
       files: File[];
       pageindexMode?: "flash" | "standard";
@@ -282,6 +284,13 @@ export default function KnowledgePage() {
       }
     },
     [retry, setError],
+  );
+
+  const handleSaveConfig = useCallback(
+    async (kbName: string, config: Record<string, unknown>) => {
+      await updateKbConfig(kbName, config);
+    },
+    [updateKbConfig],
   );
 
   const handleSelectMode = useCallback(
@@ -376,6 +385,7 @@ export default function KnowledgePage() {
               onSetDefault={handleSetDefault}
               onDelete={handleDelete}
               onClearHistory={clearHistory}
+              onSaveConfig={handleSaveConfig}
               onBack={() => {
                 setHomeSection("knowledge-bases");
                 setView("home");

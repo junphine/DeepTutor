@@ -78,13 +78,16 @@ def resolve_kb(kb_ref: str, *, require_write: bool = False) -> KnowledgeResource
     if user.is_admin:
         manager = admin_kb_manager()
         resolved = _resolve_default_or_name(manager, name)
+        meta = manager.get_metadata(resolved)
         return KnowledgeResource(
             id=f"admin:kb:{resolved}",
             name=resolved,
+            description=meta.get("description", ""),
             base_dir=admin_kb_base_dir(),
             source="admin",
             assigned=False,
             read_only=False,
+            metadata=meta
         )
 
     user_manager = current_kb_manager()
@@ -97,46 +100,59 @@ def resolve_kb(kb_ref: str, *, require_write: bool = False) -> KnowledgeResource
             raise HTTPException(
                 status_code=403, detail="Assigned admin knowledge bases are read-only"
             )
+        admin_manager = admin_kb_manager()
+        meta = admin_manager.get_metadata(name)
         return KnowledgeResource(
             id=f"admin:kb:{name}",
             name=name,
+            description=meta.get("description", ""),
             base_dir=admin_kb_base_dir(),
             source="admin",
             assigned=True,
             read_only=True,
+            metadata=meta
         )
 
     if requested_source == "user":
         resolved = _resolve_default_or_name(user_manager, name)
+        meta = user_manager.get_metadata(resolved)
         return KnowledgeResource(
             id=f"user:kb:{resolved}",
             name=resolved,
+            description=meta.get("description", ""),
             base_dir=current_kb_base_dir(),
             source="user",
             assigned=False,
             read_only=False,
+            metadata=meta
         )
 
     if name.lower() in DEFAULT_KB_ALIASES:
         resolved = _resolve_default_or_name(user_manager, name)
+        meta = user_manager.get_metadata(resolved)
         return KnowledgeResource(
             id=f"user:kb:{resolved}",
             name=resolved,
+            description=meta.get("description", ""),
             base_dir=current_kb_base_dir(),
             source="user",
             assigned=False,
             read_only=False,
+            metadata=meta
         )
 
     user_names = set(user_manager.list_knowledge_bases())
     if name in user_names:
+        meta = user_manager.get_metadata(name)
         return KnowledgeResource(
             id=f"user:kb:{name}",
             name=name,
+            description=meta.get("description", ""),
             base_dir=current_kb_base_dir(),
             source="user",
             assigned=False,
             read_only=False,
+            metadata=meta
         )
 
     if name in assigned_names:
@@ -144,13 +160,17 @@ def resolve_kb(kb_ref: str, *, require_write: bool = False) -> KnowledgeResource
             raise HTTPException(
                 status_code=403, detail="Assigned admin knowledge bases are read-only"
             )
+        admin_manager = admin_kb_manager()
+        meta = admin_manager.get_metadata(name)
         return KnowledgeResource(
             id=f"admin:kb:{name}",
             name=name,
+            description=meta.get("description", ""),
             base_dir=admin_kb_base_dir(),
             source="admin",
             assigned=True,
             read_only=True,
+            metadata=meta
         )
 
     raise HTTPException(status_code=404, detail=f"Knowledge base '{name}' not found")
@@ -178,10 +198,12 @@ def list_visible_knowledge_bases() -> list[dict[str, Any]]:
     manager = current_kb_manager()
     items: list[dict[str, Any]] = []
     for name in manager.list_knowledge_bases():
+        meta = manager.get_metadata(name)
         items.append(
             {
                 "id": f"admin:kb:{name}" if user.is_admin else f"user:kb:{name}",
                 "name": name,
+                "description": meta.get("description", ""),
                 "source": "admin" if user.is_admin else "user",
                 "assigned": False,
                 "read_only": False,
@@ -247,6 +269,8 @@ def resolve_kb_metadata(kb_ref: str | None) -> dict[str, Any] | None:
         return None
     try:
         resource = resolve_kb(str(kb_ref), require_write=False)
+        if resource.metadata:
+            return resource.metadata
     except HTTPException:
         return None
     manager = _manager_for(str(resource.base_dir.resolve()))

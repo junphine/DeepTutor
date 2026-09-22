@@ -174,6 +174,10 @@ export interface KnowledgeBase {
     embedding_mismatch?: boolean;
     /** Connected-source kind (e.g. "obsidian", "subagent"); absent for ordinary indexed KBs. */
     type?: string;
+    description?: string;
+    server_url?: string;
+    api_key?: string;
+    search_mode?: string;
     /** Absolute path of a connected Obsidian vault (when type === "obsidian"). */
     vault_path?: string;
     /** SQLite store of a connected MarginNote 4 library (when type === "marginnote4"). */

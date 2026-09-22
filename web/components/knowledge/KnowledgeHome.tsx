@@ -9,6 +9,7 @@ import {
   Cpu,
   Database,
   HardDrive,
+  Info,
   Library,
   Plus,
   Search,
@@ -30,6 +31,7 @@ import { knowledgeEngineGroup } from "@/lib/knowledge-engine-group";
 import KnowledgeEngineIcon, {
   knowledgeSourceIconId,
 } from "./KnowledgeEngineIcon";
+import Tooltip from "@/components/common/Tooltip";
 
 export type KnowledgeHomeSection = "knowledge-bases" | "knowledge-engines";
 
@@ -381,6 +383,11 @@ export default function KnowledgeHome({
                                 className="h-3 w-3 shrink-0 text-amber-500"
                                 fill="currentColor"
                               />
+                            )}
+                            {kb.metadata?.description && (
+                              <Tooltip label={kb.metadata?.description}>
+                                <Info className="h-3 w-3 shrink-0 text-[var(--muted-foreground)]" />
+                              </Tooltip>
                             )}
                           </div>
                           <div className="mt-2 flex items-center gap-2 text-[11px] text-[var(--muted-foreground)]">

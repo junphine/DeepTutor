@@ -75,6 +75,7 @@ class CurrentUser:
 class KnowledgeResource:
     id: str
     name: str
+    description: str
     base_dir: Path
     source: Literal["admin", "user"]
     assigned: bool = False

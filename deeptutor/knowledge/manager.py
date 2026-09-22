@@ -826,6 +826,7 @@ class KnowledgeBaseManager:
         cwd: str = "",
         partner_id: str = "",
         description: str = "",
+        agent_id: str = "",
     ) -> dict:
         """Register a connected subagent (local Claude Code / Codex, or a partner) as a KB.
 
@@ -861,6 +862,7 @@ class KnowledgeBaseManager:
             "cwd": resolved_cwd,
             "partner_id": partner_id,
             "description": description or f"Connected subagent: {name}",
+            "agent_id": agent_id,
             "status": "ready",
             "created_at": now,
             "updated_at": now,
@@ -1218,7 +1220,8 @@ class KnowledgeBaseManager:
                 return {}
 
         # First, try kb_config.json (authoritative source)
-        self.config = self._load_config()
+        # disable@byron not load
+        #- self.config = self._load_config()
         kb_config = self.config.get("knowledge_bases", {}).get(kb_name, {})
 
         if kb_config:
@@ -1242,6 +1245,7 @@ class KnowledgeBaseManager:
                 # LightRAG server pointer (the URL is safe to surface; the API
                 # key deliberately is not).
                 "server_url": kb_config.get("server_url"),
+                "api_key": kb_config.get("api_key"),
                 # IMA pointer. The library id identifies which IMA knowledge
                 # base this KB reads; the client id and API key are credentials
                 # and are deliberately absent from this allowlist.
@@ -1250,6 +1254,7 @@ class KnowledgeBaseManager:
                 "agent_kind": kb_config.get("agent_kind"),
                 "cwd": kb_config.get("cwd"),
                 "partner_id": kb_config.get("partner_id"),
+                "agent_id": kb_config.get("agent_id"),
             }
             metadata.update(self._embedding_fields(kb_config))
             # Remove None values

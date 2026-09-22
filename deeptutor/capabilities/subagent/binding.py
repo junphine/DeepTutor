@@ -49,6 +49,8 @@ def _resolve(context: UnifiedContext) -> dict[str, str] | None:
             "kind": kind,
             "cwd": str(meta.get("cwd") or "").strip(),
             "partner_id": str(meta.get("partner_id") or "").strip(),
+            "agent_id": str(meta.get("agent_id") or "").strip(),
+            "description": str(meta.get("description") or "").strip(),
         }
     return None
 

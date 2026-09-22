@@ -74,17 +74,20 @@ interface CreateKbModalProps {
     pageindexMode?: "flash" | "standard";
     searchMode?: string;
     indexingLLM?: IndexingLLMSelection;
+    description?: string;
   }) => Promise<void>;
   /** Link a pre-built engine index folder in place (no copy, no re-index). */
   onConnectLinkedFolder: (params: {
     name: string;
     folderPath: string;
     provider: string;
+    description?: string;
   }) => Promise<void>;
   /** Connect a live Obsidian vault (no index). */
   onConnectObsidian: (params: {
     name: string;
     vaultPath: string;
+    description?: string;
   }) => Promise<void>;
   /** Connect an external LightRAG server (retrieval only, no local index). */
   onConnectLightRagServer: (params: {
@@ -92,6 +95,7 @@ interface CreateKbModalProps {
     serverUrl: string;
     apiKey?: string;
     mode?: string;
+    description?: string;
   }) => Promise<void>;
   /** Connect a self-hosted WeKnora knowledge base (retrieval only). */
   onConnectWeKnora: (params: {
@@ -99,9 +103,10 @@ interface CreateKbModalProps {
     serverUrl: string;
     apiKey: string;
     knowledgeBaseId: string;
+    description?: string;
   }) => Promise<void>;
   /** Connect a MarginNote 4 library (its Add-on pushes objects in; no index). */
-  onConnectMarginNote4: (params: { name: string }) => Promise<void>;
+  onConnectMarginNote4: (params: { name: string;description?: string; }) => Promise<void>;
   /** Connect a Tencent IMA knowledge base (retrieval only, no local index). */
   onConnectIma: (params: {
     name: string;
@@ -136,6 +141,7 @@ export default function CreateKbModal({
   const { t } = useTranslation();
   const [mode, setMode] = useState<Mode>("new");
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [provider, setProvider] = useState("llamaindex");
   const [files, setFiles] = useState<File[]>([]);
   const [pageIndexMode, setPageIndexMode] = useState<"" | "flash" | "standard">(
@@ -212,6 +218,7 @@ export default function CreateKbModal({
     if (!justOpened) return;
     setMode(initialMode);
     setName("");
+    setDescription("");
     setFiles([]);
     setPageIndexMode("");
     setError(null);
@@ -483,6 +490,7 @@ export default function CreateKbModal({
             serverUrl: trimmedServerUrl,
             apiKey: apiKey.trim(),
             mode: retrievalMode,
+            description: description.trim() || undefined,
           });
         } else if (isWeKnora) {
           await onConnectWeKnora({
@@ -490,17 +498,17 @@ export default function CreateKbModal({
             serverUrl: trimmedServerUrl,
             apiKey: apiKey.trim(),
             knowledgeBaseId: weKnoraKnowledgeBaseId.trim(),
+            description: description.trim() || undefined,
           });
         } else {
           await onCreate({
             name: trimmed,
             provider,
             files: selection.validFiles,
-            pageindexMode:
-              isPageIndexOSS && pageIndexMode ? pageIndexMode : undefined,
+            pageindexMode: isPageIndexOSS && pageIndexMode ? pageIndexMode : undefined,
             searchMode: retrievalMode || undefined,
-            indexingLLM:
-              provider === "lightrag" ? indexingLLM || undefined : undefined,
+            indexingLLM: provider === "lightrag" ? indexingLLM || undefined : undefined,
+            description: description.trim() || undefined,
           });
         }
       } else if (linkIsIma) {
@@ -513,14 +521,15 @@ export default function CreateKbModal({
           knowledgeBaseId: imaConnection.knowledgeBaseId,
         });
       } else if (linkIsMarginNote) {
-        await onConnectMarginNote4({ name: trimmed });
+        await onConnectMarginNote4({ name: trimmed,description: description.trim() || undefined });
       } else if (linkIsObsidian) {
-        await onConnectObsidian({ name: trimmed, vaultPath: trimmedPath });
+        await onConnectObsidian({ name: trimmed, vaultPath: trimmedPath, description: description.trim() || undefined });
       } else {
         await onConnectLinkedFolder({
           name: trimmed,
           folderPath: trimmedPath,
           provider: linkSource,
+          description: description.trim() || undefined
         });
       }
       handleClose();
@@ -607,6 +616,22 @@ export default function CreateKbModal({
               )}
             </p>
           )}
+        </div>
+
+        <div>
+          <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+            {t("Description")}
+            <span className="ml-1 normal-case tracking-normal text-[var(--muted-foreground)]/80">
+              ({t("optional")})
+            </span>
+          </label>
+          <input
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            disabled={submitting}
+            placeholder={t("e.g. Research papers on machine learning")}
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[13px] text-[var(--foreground)] outline-none transition-colors focus:border-[var(--foreground)]/25 disabled:opacity-50"
+          />
         </div>
 
         {mode === "new" ? (

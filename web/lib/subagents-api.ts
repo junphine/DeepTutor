@@ -20,6 +20,7 @@ export interface SubagentConnection {
   /** Set for a partner connection (`agent_kind === "partner"`): the bound partner. */
   partner_id?: string;
   description?: string;
+  agent_id?: string;
   created_at?: string;
   updated_at?: string | null;
 }
@@ -73,6 +74,8 @@ export async function connectSubagent(payload: {
   cwd?: string;
   /** Required when `agent_kind === "partner"`: which partner to consult. */
   partner_id?: string;
+  description?: string;
+  agent_id?: string;
 }): Promise<SubagentConnection> {
   const res = await apiFetch(apiUrl("/api/subagents/connections"), {
     method: "POST",

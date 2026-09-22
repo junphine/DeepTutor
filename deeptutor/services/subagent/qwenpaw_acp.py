@@ -102,12 +102,12 @@ class QwenPawACPBackend(SubagentBackend):
         session_id: str | None = None,
         config: BackendConfig | None = None,
         images: list[str] | None = None,
-        partner_id: str | None = None,  # noqa: ARG002 — partner-only
+        partner_id: str | None = None,  # partner_id is assigned from agent_id
     ) -> ConsultResult:
         config = config or BackendConfig()
         sid = session_id or f"deeptutor-{uuid.uuid4().hex}"
 
-        cmd = self._build_acp_question_command(question, cwd=cwd, config=config, images=images)
+        cmd = self._build_acp_question_command(question, cwd=cwd, agent_id=partner_id, config=config, images=images)
         result = ConsultResult(session_id=sid)
         answer_parts: list[str] = []
         reasoning_parts: list[str] = []
@@ -185,12 +185,14 @@ class QwenPawACPBackend(SubagentBackend):
         return result
 
     def _build_acp_question_command(
-        self, question: str, *, cwd: str,config: BackendConfig, images: list[str] | None = None
+        self, question: str, *, cwd: str, agent_id: str, config: BackendConfig, images: list[str] | None = None
     ) -> list[str]:
         """Build command for asking a question; prompt passed via stdin."""
         cmd = [self.cli_command, "acp"]
         if cwd:
             cmd += ["--workspace",cwd]
+        if agent_id:
+            cmd += ["--agent",agent_id]
         if config.model:
             cmd += ["--model", config.model]
         if config.effort:

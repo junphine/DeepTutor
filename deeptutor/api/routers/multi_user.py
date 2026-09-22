@@ -186,6 +186,7 @@ def _admin_kb_summary() -> list[dict[str, Any]]:
         {
             "resource_id": f"admin:kb:{name}",
             "name": name,
+            "description": manager.get_metadata(name).get("description", ""),
             "source": "admin",
         }
         for name in manager.list_knowledge_bases()

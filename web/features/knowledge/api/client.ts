@@ -690,6 +690,7 @@ export async function createKnowledgeBase(payload: {
   pageindexMode?: "flash" | "standard";
   searchMode?: string;
   indexingLLM?: IndexingLLMSelection;
+  description?: string;
 }): Promise<KnowledgeTaskResponse> {
   const form = new FormData();
   form.append("name", payload.name);
@@ -701,6 +702,7 @@ export async function createKnowledgeBase(payload: {
   if (payload.indexingLLM) {
     form.append("indexing_llm", JSON.stringify(payload.indexingLLM));
   }
+  if (payload.description) form.append("description", payload.description);
   appendFilesWithPaths(form, payload.files);
 
   const res = await apiFetch(apiUrl("/api/knowledge-bases"), {
@@ -993,6 +995,7 @@ export async function probeLightRagServer(payload: {
 
 export async function connectLightRagServer(payload: {
   name: string;
+  description?: string;
   serverUrl: string;
   apiKey?: string;
   mode?: string;
@@ -1009,6 +1012,7 @@ export async function connectLightRagServer(payload: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: payload.name,
+        description: payload.description,
         server_url: payload.serverUrl,
         api_key: payload.apiKey ?? "",
         search_mode: payload.mode ?? "",
@@ -1051,6 +1055,7 @@ export async function probeWeKnora(payload: {
 
 export async function connectWeKnora(payload: {
   name: string;
+  description?: string;
   serverUrl: string;
   apiKey: string;
   knowledgeBaseId: string;
@@ -1066,6 +1071,7 @@ export async function connectWeKnora(payload: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       name: payload.name,
+      description: payload.description,
       server_url: payload.serverUrl,
       api_key: payload.apiKey,
       knowledge_base_id: payload.knowledgeBaseId,
@@ -1249,6 +1255,32 @@ export async function retryKnowledgeBase(
   }
   invalidateKnowledgeCaches();
   return (await res.json()) as KnowledgeTaskResponse;
+}
+
+/**
+ * Update mutable config fields for an existing knowledge base (description,
+ * server_url, search_mode, etc.) through the `PUT /knowledge-bases/{kb_name}/config`
+ * endpoint.
+ */
+export async function updateKnowledgeBaseConfig(
+  kbName: string,
+  config: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const res = await apiFetch(
+    apiUrl(`/api/knowledge-bases/${encodeURIComponent(kbName)}/config`),
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(
+      await readErrorDetail(res, `Update failed (${res.status})`),
+    );
+  }
+  invalidateKnowledgeCaches();
+  return (await res.json()) as Record<string, unknown>;
 }
 
 /**

@@ -157,7 +157,6 @@ export default function UtilitySidebar() {
         <>
           <ProfileLink collapsed={collapsed} />
           <AdminLink collapsed={collapsed} />
-          <LogoutButton collapsed={collapsed} />
         </>
       )}
     />

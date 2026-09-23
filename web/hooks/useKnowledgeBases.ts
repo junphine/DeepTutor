@@ -18,11 +18,9 @@ import {
   listRagProviders,
   reindexKnowledgeBase as reindexKbApi,
   retryKnowledgeBase as retryKbApi,
-  updatePendingIndexingPolicy as updatePendingIndexingPolicyApi,
   setDefaultKnowledgeBase as setDefaultKbApi,
   updateKnowledgeBaseConfig as updateKbConfigApi,
   type KnowledgeTaskResponse,
-  type IndexingLLMSelection,
   type KnowledgeUploadPolicy,
   type RagProviderSummary,
 } from "@/features/knowledge/api/catalog";
@@ -117,7 +115,10 @@ export function useKnowledgeBases() {
           const status = kb.status ?? kb.statistics?.status;
           const kbProgress = kb.progress ?? kb.statistics?.progress;
           if (status === "error" && kbProgress) {
-            progress.setProgress(knowledgeBaseRef(kb), kbProgress as ProgressInfo);
+            progress.setProgress(
+              knowledgeBaseRef(kb),
+              kbProgress as ProgressInfo,
+            );
             continue;
           }
           if (
@@ -189,7 +190,6 @@ export function useKnowledgeBases() {
       files: File[];
       pageindexMode?: "flash" | "standard";
       searchMode?: string;
-      indexingLLM?: IndexingLLMSelection;
       embeddingModel?: EmbeddingModelSelection;
     }): Promise<KnowledgeTaskResponse> => {
       const result = await createKbApi(params);
@@ -268,10 +268,14 @@ export function useKnowledgeBases() {
   const reindex = useCallback(
     async (
       kbName: string,
-      indexingLLM?: IndexingLLMSelection,
+      configFingerprint?: string,
       embeddingModel?: EmbeddingModelSelection,
     ): Promise<KnowledgeTaskResponse> => {
-      const result = await reindexKbApi(kbName, indexingLLM, embeddingModel);
+      const result = await reindexKbApi(
+        kbName,
+        configFingerprint,
+        embeddingModel,
+      );
       if (result.noop) {
         await load({ force: true, showSpinner: false });
         return result;
@@ -292,14 +296,6 @@ export function useKnowledgeBases() {
       return result;
     },
     [load, progress],
-  );
-
-  const updatePendingIndexingPolicy = useCallback(
-    async (kbName: string, indexingLLM: IndexingLLMSelection) => {
-      await updatePendingIndexingPolicyApi(kbName, indexingLLM);
-      await load({ force: true, showSpinner: false });
-    },
-    [load],
   );
 
   const retry = useCallback(
@@ -432,7 +428,6 @@ export function useKnowledgeBases() {
     uploadFiles,
     setDefault,
     reindex,
-    updatePendingIndexingPolicy,
     retry,
     deleteKb,
     updateKbConfig,

@@ -9,7 +9,6 @@ import {
   providerUsesEmbeddingMetadata,
   type KnowledgeBase,
 } from "@/lib/knowledge-helpers";
-import LightRagIndexingProvenance from "./LightRagIndexingProvenance";
 
 interface KbSettingsSectionProps {
   kb: KnowledgeBase;
@@ -43,12 +42,6 @@ export default function KbSettingsSection({
   const created = formatKnowledgeTimestamp(meta.created_at);
   const updated = formatKnowledgeTimestamp(meta.last_updated);
   const lastIndexed = formatKnowledgeTimestamp(meta.last_indexed_at);
-  const publishedLightRagVersion =
-    provider === "lightrag"
-      ? kb.statistics?.index_versions?.find(
-          (version) => version.provider === "lightrag" && version.ready,
-        )
-      : undefined;
 
   // ── Editable settings ──────────────────────────────────────────
   const [description, setDescription] = useState(meta.description || "");
@@ -120,14 +113,13 @@ export default function KbSettingsSection({
 
   return (
     <div className="space-y-6">
-      {/* ── Read-only overview ──────────────────────────────────── */}
       <section className="space-y-3">
         <div>
           <div className="text-[13px] font-medium text-[var(--foreground)]">
             {t("Overview")}
           </div>
           <p className="mt-0.5 text-[11.5px] text-[var(--muted-foreground)]">
-            {t("Read-only metadata.")}
+            {t("Read-only metadata. Use the actions below to manage this KB.")}
           </p>
         </div>
 
@@ -158,18 +150,6 @@ export default function KbSettingsSection({
               )}
         </dl>
       </section>
-
-      {provider === "lightrag" && (
-        <section className="space-y-3">
-          <div className="text-[13px] font-medium text-[var(--foreground)]">
-            {t("Indexing model provenance")}
-          </div>
-          <LightRagIndexingProvenance
-            policy={meta.indexing_policy}
-            version={publishedLightRagVersion}
-          />
-        </section>
-      )}
 
       {/* ── Editable settings ──────────────────────────────────── */}
       <section className="space-y-3">

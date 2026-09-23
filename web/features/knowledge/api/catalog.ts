@@ -16,14 +16,16 @@ export {
   probeWeKnora,
   readErrorDetail,
   reindexKnowledgeBase,
+  getReindexConfig,
+  type LightRagRebuildConfig,
   retryKnowledgeBase,
   setDefaultKnowledgeBase,
   updateKnowledgeBaseConfig,
-  updatePendingIndexingPolicy,
 } from "./client";
 
 export type {
   IndexingLLMSelection,
+  LightRagIndexingSelection,
   ImaKnowledgeBasePage,
   ImaProbe,
   KnowledgeBaseSummary,

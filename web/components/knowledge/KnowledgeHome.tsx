@@ -32,7 +32,7 @@ import { knowledgeEngineGroup } from "@/lib/knowledge-engine-group";
 import KnowledgeEngineIcon, {
   knowledgeSourceIconId,
 } from "./KnowledgeEngineIcon";
-import Tooltip from "@/components/common/Tooltip";
+import Tooltip from "@/shared/ui/Tooltip";
 
 export type KnowledgeHomeSection = "knowledge-bases" | "knowledge-engines";
 

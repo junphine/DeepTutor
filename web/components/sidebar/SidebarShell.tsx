@@ -365,13 +365,13 @@ export function SidebarShell({
                 key={item.href}
                 href={item.href}
                 onClick={closeDrawerOnNav}
-                className={`flex min-h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition-colors ${
+                className={`flex min-h-8 min-w-0 flex-1 items-center gap-2.5 rounded-md px-3 py-1.5 text-[13px] transition-colors ${
                   active
                     ? "bg-[var(--accent)] font-medium text-[var(--foreground)]"
                     : "text-foreground/85 hover:bg-background/60 hover:text-[var(--foreground)]"
                 }`}
               >
-                <item.icon size={15} strokeWidth={active ? 1.9 : 1.6} />
+                <item.icon size={16} strokeWidth={active ? 1.9 : 1.6} />
                 <span>{t(item.label)}</span>
               </Link>
             );

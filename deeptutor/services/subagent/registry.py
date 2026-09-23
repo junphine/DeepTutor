@@ -24,7 +24,7 @@ from deeptutor.services.subagent.kimi import KimiBackend
 from deeptutor.services.subagent.openclaw import OpenClawBackend
 from deeptutor.services.subagent.opencode_family import MimoBackend, OpencodeBackend
 from deeptutor.services.subagent.qwenpaw_acp import QwenPawACPBackend
-from deeptutor.services.subagent.partner import PartnerBackend
+
 from deeptutor.services.subagent.types import DetectResult
 
 _BACKENDS: dict[str, SubagentBackend] = {
@@ -40,7 +40,6 @@ _BACKENDS: dict[str, SubagentBackend] = {
         HermesRemoteBackend(),
         OpenClawBackend(),
         DeepSeekHarnessBackend(),
-        PartnerBackend(),
         QwenPawACPBackend(),
     )
 }

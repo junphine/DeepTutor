@@ -1,5 +1,7 @@
 "use client";
 
+import { useSettings } from "@/features/settings/store/SettingsStore";
+import { useStagedSettings } from "@/features/settings/store/useStagedSettings";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Loader2, RefreshCw, XCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -17,7 +19,6 @@ import {
   getBackendOptions,
   getSubagentSettings,
   syncBackendOptions,
-  updateSubagentSettings,
   type SubagentBackendConfig,
   type SubagentBackendOptions,
 } from "@/lib/subagents-api";
@@ -174,8 +175,8 @@ const KIND_FEATURES: Record<string, KindFeatures> = {
     systemPrompt: true,
     permissionMode: false,
     codexSandbox: false,
-    autoApprove: false,
-    thinking: true,
+    autoApprove: true,
+    thinking: false,
     forwardImages: true,
   },
 };
@@ -290,11 +291,12 @@ export function SubagentSettingsEditor({ kind }: { kind: string }) {
   const tr = useCallback((l: Lang) => (zh ? l.zh : l.en), [zh]);
 
   const [options, setOptions] = useState<SubagentBackendOptions | null>(null);
-  const [config, setConfig] = useState<SubagentBackendConfig>({ ...DEFAULTS });
+  const [liveConfig, setLiveConfig] = useState<SubagentBackendConfig>({ ...DEFAULTS });
+  const [config, setConfig] = useStagedSettings(`subagent:${kind}`, liveConfig, setLiveConfig);
   const [customModel, setCustomModel] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { applying: busy, draftRevision } = useSettings();
   const [error, setError] = useState<string | null>(null);
 
   const Glyph = agentGlyph(kind);
@@ -314,7 +316,7 @@ export function SubagentSettingsEditor({ kind }: { kind: string }) {
       ]);
       setOptions(opts);
       const stored = settings.backends?.[kind] ?? {};
-      setConfig({ ...DEFAULTS, ...stored });
+      setLiveConfig({ ...DEFAULTS, ...stored });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -324,7 +326,7 @@ export function SubagentSettingsEditor({ kind }: { kind: string }) {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, draftRevision]);
 
   const sync = useCallback(async () => {
     setSyncing(true);
@@ -339,23 +341,9 @@ export function SubagentSettingsEditor({ kind }: { kind: string }) {
     }
   }, [kind]);
 
-  // Persist a patch for THIS backend only; the API merges per field, so we send
-  // just what changed and never clobber the other backend or unsent fields.
-  const save = useCallback(
-    async (patch: Partial<SubagentBackendConfig>) => {
-      setConfig((prev) => ({ ...prev, ...patch }));
-      setBusy(true);
-      setError(null);
-      try {
-        await updateSubagentSettings({ backends: { [kind]: patch } });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [kind],
-  );
+  const save = useCallback(async (patch: Partial<SubagentBackendConfig>) => {
+    setConfig((prev) => ({ ...prev, ...patch }));
+  }, [setConfig]);
 
   const features = KIND_FEATURES[kind] ?? FALLBACK_FEATURES;
   const isRemote = kind === "hermes_remote";

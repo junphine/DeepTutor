@@ -16,6 +16,7 @@ rag_storage/
 /site/
 .claude
 .agents/
+.workbuddy/
 
 # LaTeX build artifacts
 *.aux

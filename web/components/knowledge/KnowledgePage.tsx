@@ -16,6 +16,11 @@ import {
   decodeResourceSegment,
   knowledgeBaseRoute,
 } from "@/lib/resource-routes";
+import type {
+  IndexingLLMSelection,
+  LinkedFolderInfo,
+  SyncFolderResponse,
+} from "@/features/knowledge/model/types";
 
 const panelLoading = () => (
   <div
@@ -72,6 +77,9 @@ export default function KnowledgePage() {
     updateKbConfig,
     connectObsidian,
     connectLinkedFolder,
+    linkFolder,
+    unlinkFolder,
+    syncLinkedFolder,
     connectLightRagServer,
     connectWeKnora,
     connectMarginNote4,
@@ -265,6 +273,42 @@ export default function KnowledgePage() {
     [setError, uploadFiles],
   );
 
+  const handleLinkFolder = useCallback(
+    async (kbName: string, folderPath: string): Promise<LinkedFolderInfo> => {
+      try {
+        return await linkFolder(kbName, folderPath);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        throw err;
+      }
+    },
+    [linkFolder, setError],
+  );
+
+  const handleUnlinkFolder = useCallback(
+    async (kbName: string, folderId: string): Promise<void> => {
+      try {
+        await unlinkFolder(kbName, folderId);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        throw err;
+      }
+    },
+    [setError, unlinkFolder],
+  );
+
+  const handleSyncFolder = useCallback(
+    async (kbName: string, folderId: string): Promise<SyncFolderResponse> => {
+      try {
+        return await syncLinkedFolder(kbName, folderId);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        throw err;
+      }
+    },
+    [setError, syncLinkedFolder],
+  );
+
   const handleReindex = useCallback(
     async (
       kbName: string,
@@ -391,6 +435,9 @@ export default function KnowledgePage() {
               }
               onCreate={openCreate}
               onUpload={handleUpload}
+              onLinkFolder={handleLinkFolder}
+              onUnlinkFolder={handleUnlinkFolder}
+              onSyncFolder={handleSyncFolder}
               onReindex={handleReindex}
               onRetry={handleRetry}
               onSetDefault={handleSetDefault}

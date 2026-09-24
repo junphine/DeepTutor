@@ -30,6 +30,7 @@ from deeptutor.services.subagent.process import (
     stream_process_lines,
 )
 from .qwenpaw_remote_client import QwenPawRemoteClient
+from deeptutor.multi_user.context import get_current_user
 
 _SESSION_LINE = re.compile(r"^\s*session_id:\s*(\S+)\s*$", re.IGNORECASE)
 logger = logging.getLogger(__name__)
@@ -96,7 +97,8 @@ class QwenPawRemoteBackend(SubagentBackend):
             await on_event(SubagentEvent(kind=kind, text=text, raw=raw or {}))
 
         try:
-            qwenpaw_client = QwenPawRemoteClient(config.base_url,agent_id=partner_id)
+            current_user = get_current_user()
+            qwenpaw_client = QwenPawRemoteClient(config.base_url,agent_id=partner_id,username=current_user.username)
             if images: # read images content
                 qwenpaw_result = qwenpaw_client.process_directory(prompt_msgs,images,cwd,session_id=sid)
             else:
@@ -178,6 +180,8 @@ class QwenPawRemoteBackend(SubagentBackend):
     def _env(self) -> dict[str, str]:
         """Return environment variables for the qwenpaw subprocess."""
         env = os.environ.copy()
+        current_user = get_current_user()
+        env['current_user'] = current_user.username
         # Ensure PATH is available; qwenpaw must be on PATH or configured
         return env
 

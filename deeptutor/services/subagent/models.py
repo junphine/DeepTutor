@@ -398,7 +398,6 @@ async def _hermes_remote_options() -> BackendOptions:
 async def _openclaw_options() -> BackendOptions:
     return await _free_text_options("openclaw", "OpenClaw", _OPENCLAW_EFFORTS)
 
-
 async def _deepseek_harness_options() -> BackendOptions:
     return await _free_text_options(
         "deepseek_harness", "DeepSeek Harness", _DEEPSEEK_HARNESS_EFFORTS
@@ -409,6 +408,10 @@ async def _qwenpaw_acp_options() -> BackendOptions:
         "qwenpaw_acp", "QwenPaw ACP", _QWENPAW_HARNESS_EFFORTS
     )
 
+async def _qwenpaw_remote_options() -> BackendOptions:
+    return await _free_text_options(
+        "qwenpaw_remote", "QwenPaw Agent (remote)", _QWENPAW_HARNESS_EFFORTS
+    )
 
 # One provider per backend kind — the discovery order is the settings order.
 _PROVIDERS: dict[str, Callable[..., Awaitable[BackendOptions]]] = {
@@ -424,6 +427,7 @@ _PROVIDERS: dict[str, Callable[..., Awaitable[BackendOptions]]] = {
     "openclaw": _openclaw_options,
     "deepseek_harness": _deepseek_harness_options,
     "qwenpaw_acp": _qwenpaw_acp_options,
+    "qwenpaw_remote": _qwenpaw_remote_options,
 }
 
 

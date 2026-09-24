@@ -33,6 +33,7 @@ function backendLabel(kind: string): string {
   if (kind === "openclaw") return "OpenClaw";
   if (kind === "deepseek_harness") return "DeepSeek Harness";
   if (kind === "qwenpaw_acp") return "QwenPaw ACP";
+  if (kind === "qwenpaw_remote") return "QwenPaw Agent (remote)";
   return kind;
 }
 

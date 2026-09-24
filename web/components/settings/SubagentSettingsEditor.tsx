@@ -179,6 +179,15 @@ const KIND_FEATURES: Record<string, KindFeatures> = {
     thinking: false,
     forwardImages: true,
   },
+  qwenpaw_remote: {
+    effort: true,
+    systemPrompt: true,
+    permissionMode: false,
+    codexSandbox: false,
+    autoApprove: true,
+    thinking: false,
+    forwardImages: true,
+  },
 };
 
 const FALLBACK_FEATURES: KindFeatures = KIND_FEATURES.claude_code;
@@ -194,6 +203,7 @@ const DISPLAY_NAMES: Record<string, string> = {
   openclaw: "OpenClaw",
   deepseek_harness: "DeepSeek Harness",
   qwenpaw_acp: "QwenPaw ACP",
+  qwenpaw_remote: "QwenPaw Agent (remote)",
 };
 
 // Per-kind flavor for the system-prompt section: how the instruction reaches
@@ -234,6 +244,10 @@ const SYSTEM_PROMPT_HINT: Record<string, Lang> = {
   qwenpaw_acp: {
     zh: "该指令会前缀在每个新 QwenPaw ACP 会话的第一条消息上。",
     en: "The instruction is prefixed to the first message in each new QwenPaw ACP session.",
+  },
+  qwenpaw_remote: {
+    zh: "该指令会前缀在每个新 QwenPaw 网关会话的第一条消息上。",
+    en: "The instruction is prefixed to the first message in each new QwenPaw Gateway session.",
   },
 };
 
@@ -346,7 +360,7 @@ export function SubagentSettingsEditor({ kind }: { kind: string }) {
   }, [setConfig]);
 
   const features = KIND_FEATURES[kind] ?? FALLBACK_FEATURES;
-  const isRemote = kind === "hermes_remote";
+  const isRemote = ["hermes_remote","qwenpaw_remote"].includes(kind);
   const knownSlugs = useMemo(
     () => new Set((options?.models ?? []).map((m) => m.slug)),
     [options],

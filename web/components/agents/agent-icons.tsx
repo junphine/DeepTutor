@@ -221,6 +221,7 @@ export function agentGlyph(kind: string | undefined): AgentGlyph | null {
   if (kind === "openclaw") return OpenClawGlyph;
   if (kind === "deepseek_harness") return DeepSeekGlyph;
   if (kind === "qwenpaw_acp") return QwenPawGlyph;
+  if (kind === "qwenpaw_remote") return QwenPawGlyph;
   if (kind === "partner") return PartnerGlyph;
   return null;
 }

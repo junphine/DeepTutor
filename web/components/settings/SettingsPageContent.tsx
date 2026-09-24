@@ -211,6 +211,7 @@ const AGENTS = {
   "agent-openclaw": "openclaw",
   "agent-deepseek-harness": "deepseek_harness",
   "agent-qwenpaw-acp": "qwenpaw_acp",
+  "agent-qwenpaw-remote": "qwenpaw_remote",
 } as const;
 
 export default function SettingsPageContent({ section }: { section: string }) {

@@ -450,6 +450,18 @@ const AGENT_CHILDREN: SettingsLeaf[] = [
     tile: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
     adminOnly: true,
   },
+  {
+    key: "agent-qwenpaw-remote",
+    href: "/settings#agent-qwenpaw-remote",
+    label: { zh: "QwenPaw Agent (远程)", en: "QwenPaw Agent (remote)" },
+    blurb: {
+      zh: "DeepTutor 通过HTTP调用远程 QwenPaw Rest 服务时的模型、推理强度与运行参数。",
+      en: "Model, reasoning effort, and run params over HTTP for the remote QwenPaw Rest Service.",
+    },
+    icon: QwenPawGlyph as unknown as LucideIcon,
+    tile: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+    adminOnly: true,
+  },
 ];
 
 export const SETTINGS_CATEGORIES: SettingsCategory[] = [

@@ -196,7 +196,7 @@ const KIND_FEATURES: Record<string, KindFeatures> = {
     autoApprove: true,
     thinking: false,
     forwardImages: true,
-  },
+  }
 };
 
 const FALLBACK_FEATURES: KindFeatures = KIND_FEATURES.claude_code;

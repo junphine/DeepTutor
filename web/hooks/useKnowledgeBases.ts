@@ -6,6 +6,7 @@ import type { EmbeddingModelSelection } from "@/features/knowledge/model/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   connectImaKnowledgeBase as connectImaApi,
+  connectKiwix as connectKiwixApi,
   connectWeKnora as connectWeKnoraApi,
   connectLinkedFolder as connectLinkedFolderApi,
   connectMarginNote4Library as connectMarginNote4Api,
@@ -197,6 +198,7 @@ export function useKnowledgeBases() {
       description?: string;
       provider: string;
       files: File[];
+      storageWorkspaceId?: string;
       pageindexMode?: "flash" | "standard";
       searchMode?: string;
       embeddingModel?: EmbeddingModelSelection;
@@ -206,7 +208,7 @@ export function useKnowledgeBases() {
       const fileCount = params.files.length;
       if (result.task_id) {
         progress.startTask({
-          kbName: params.name,
+          kbName: result.id || params.name,
           taskId: result.task_id,
           kind: "create",
           label: `Create ${params.name}`,
@@ -467,6 +469,15 @@ export function useKnowledgeBases() {
     [load],
   );
 
+  const connectKiwix = useCallback(
+    async (params: { name: string; serverUrl: string; zimName: string }) => {
+      await connectKiwixApi(params);
+      invalidateKnowledgeCaches();
+      await load({ force: true, showSpinner: false });
+    },
+    [load],
+  );
+
   return {
     kbs: combinedKbs,
     rawKbs: kbs,
@@ -497,6 +508,7 @@ export function useKnowledgeBases() {
     connectWeKnora,
     connectMarginNote4,
     connectIma,
+    connectKiwix,
   };
 }
 

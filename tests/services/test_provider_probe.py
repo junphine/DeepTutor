@@ -5,8 +5,124 @@ from types import SimpleNamespace
 
 import aiohttp
 import pytest
+import requests
 
 from deeptutor.services.settings import provider_probe
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status,expected",
+    [(403, "json_forbidden"), (429, "rate_limited"), (500, "http_error")],
+)
+async def test_searxng_json_search_errors_are_actionable(monkeypatch, status, expected):
+    """A working HTML homepage does not establish JSON API access."""
+    response = requests.Response()
+    response.status_code = status
+    response._content = b"upstream-secret-do-not-return"
+    calls = []
+
+    def get(url, **kwargs):
+        calls.append((url, kwargs))
+        return response
+
+    monkeypatch.setattr(requests, "get", get)
+    result = await provider_probe.probe_search_provider("searxng", "http://localhost:8888", None)
+    assert result == {"status": expected, "models": [], "http_status": status}
+    assert "secret" not in str(result)
+    assert calls[0][0] == "http://localhost:8888/search"
+    assert calls[0][1]["params"]["format"] == "json"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error,expected",
+    [
+        (requests.ReadTimeout("secret"), "timeout"),
+        (requests.ConnectionError("secret"), "unreachable"),
+    ],
+)
+async def test_search_transport_failures_keep_their_reason(monkeypatch, error, expected):
+    def get(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(requests, "get", get)
+    assert await provider_probe.probe_search_provider("searxng", "http://localhost:8888", None) == {
+        "status": expected,
+        "models": [],
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", ["", "http://[", "ftp://example.test", "http://example.test:bad"])
+async def test_invalid_searxng_addresses_do_not_send_a_request(monkeypatch, url):
+    calls = []
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: calls.append(args))
+    assert await provider_probe.probe_search_provider("searxng", url, None) == {
+        "status": "invalid_url",
+        "models": [],
+    }
+    assert calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body", [b"<html>secret</html>", b'{"error":"secret"}', b"[]"])
+async def test_searxng_invalid_search_payload_is_not_connected(monkeypatch, body):
+    response = requests.Response()
+    response.status_code = 200
+    response._content = body
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: response)
+    assert await provider_probe.probe_search_provider("searxng", "http://localhost:8888", None) == {
+        "status": "invalid_response",
+        "models": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_empty_search_results_verify_connection_but_warn(monkeypatch):
+    response = requests.Response()
+    response.status_code = 200
+    response._content = b'{"results":[]}'
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: response)
+    result = await provider_probe.probe_search_provider("searxng", "http://localhost:8888", None)
+    assert result["status"] == "connected"
+    assert result["warning"] == "empty_results"
+    # A full model/search test still requires actual results.
+    with pytest.raises(ValueError, match="no answer or results"):
+        provider_probe.test_search_access("searxng", "http://localhost:8888", None)
+
+
+@pytest.mark.asyncio
+async def test_provider_probe_uses_the_form_search_proxy(monkeypatch):
+    from deeptutor.api.routers import settings as router
+
+    monkeypatch.setattr(router, "_require_settings_admin", lambda: None)
+    monkeypatch.setattr(
+        router, "get_model_catalog_service", lambda: SimpleNamespace(load=lambda: {})
+    )
+    monkeypatch.setattr(
+        router, "get_settings_draft_service", lambda: SimpleNamespace(load=lambda: {})
+    )
+    response = requests.Response()
+    response.status_code = 200
+    response._content = b'{"results":[{"title":"OK","url":"https://example.test"}]}'
+    calls = []
+
+    def get(url, **kwargs):
+        calls.append(kwargs)
+        return response
+
+    monkeypatch.setattr(requests, "get", get)
+    result = await router.test_provider_connection(
+        router.ProviderProbePayload(
+            service="search",
+            binding="searxng",
+            base_url="http://searxng:8080",
+            proxy="http://proxy:3128",
+        )
+    )
+    assert result["status"] == "connected"
+    assert calls[0]["proxies"] == {"http": "http://proxy:3128", "https": "http://proxy:3128"}
 
 
 class Response:
@@ -225,10 +341,10 @@ async def test_invalid_addresses_are_actionable_without_network_requests(monkeyp
     "inputs,outputs,expected",
     [
         (["image", "video"], ["text"], {"llm"}),
-        (["text"], ["audio"], {"voice"}),
-        (["audio"], ["text"], {"llm", "voice"}),
-        (["text"], ["image"], {"generation"}),
-        (["image"], ["video", "audio"], {"generation", "voice"}),
+        (["text"], ["audio"], {"tts", "voice"}),
+        (["audio"], ["text"], {"llm"}),
+        (["text"], ["image"], {"generation", "imagegen"}),
+        (["image"], ["video", "audio"], {"generation", "videogen", "tts", "voice"}),
         (["IMAGE"], ["TEXT"], {"llm"}),
     ],
 )
@@ -237,3 +353,110 @@ def test_voice_and_visual_generation_detection_are_independent(inputs, outputs, 
         [{"architecture": {"input_modalities": inputs, "output_modalities": outputs}}]
     )
     assert {item["category"] for item in result} == expected
+
+
+@pytest.mark.asyncio
+async def test_openrouter_requests_all_output_types_without_guessing_model_names(monkeypatch):
+    session = install(
+        monkeypatch,
+        Response(
+            payload={
+                "data": [
+                    {"id": "image-looking-name"},
+                    {"id": "actual-image", "architecture": {"output_modalities": ["image"]}},
+                ]
+            }
+        ),
+    )
+    result = await provider_probe.probe_provider(
+        "openrouter", "https://openrouter.ai/api/v1", "key"
+    )
+    assert session.requests[0][1]["params"] == {"output_modalities": "all"}
+    assert result["models"] == [
+        {"id": "image-looking-name"},
+        {"id": "actual-image", "services": ["imagegen"]},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_aliyun_catalog_paginates_on_configured_region_with_explicit_types(monkeypatch):
+    session = install(monkeypatch, None)
+    pages = [
+        Response(payload={"output": {"total": 2, "page_no": page, "models": [model]}})
+        for page, model in enumerate(
+            [
+                {"model": "speech", "capabilities": ["TTS"]},
+                {
+                    "model": "transcribe",
+                    "capabilities": ["ASR"],
+                    "inference_metadata": {"response_modality": ["Text"]},
+                },
+            ],
+            1,
+        )
+    ]
+
+    def get(url, **kwargs):
+        session.requests.append((url, kwargs))
+        return pages.pop(0)
+
+    session.get = get
+    result = await provider_probe.probe_provider(
+        "dashscope", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "key"
+    )
+    assert [request[0] for request in session.requests] == [
+        "https://dashscope-intl.aliyuncs.com/api/v1/models"
+    ] * 2
+    assert [request[1]["params"]["page_no"] for request in session.requests] == [1, 2]
+    assert all(
+        request[1]["headers"]["Authorization"] == "Bearer key" for request in session.requests
+    )
+    assert result["models"] == [
+        {"id": "speech", "services": ["tts"]},
+        {"id": "transcribe", "services": ["stt"]},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_custom_anthropic_catalog_follows_cursors_and_uses_messages_auth(monkeypatch):
+    session = install(monkeypatch, None)
+    pages = [
+        Response(payload={"data": [{"id": "first"}], "has_more": True, "last_id": "first"}),
+        Response(payload={"data": [{"id": "second"}], "has_more": False}),
+    ]
+
+    def get(url, **kwargs):
+        session.requests.append((url, kwargs))
+        return pages.pop(0)
+
+    session.get = get
+    result = await provider_probe.probe_provider(
+        "custom", "https://gateway.test/v1", "key", api_format="anthropic"
+    )
+    assert result["models"] == [{"id": "first"}, {"id": "second"}]
+    assert session.requests[1][1]["params"] == {"after_id": "first"}
+    assert session.requests[0][1]["headers"]["x-api-key"] == "key"
+    assert not session.requests[0][1]["allow_redirects"]
+
+
+@pytest.mark.asyncio
+async def test_broken_pagination_stops_with_partial_warning(monkeypatch):
+    session = install(
+        monkeypatch,
+        Response(payload={"output": {"total": 20, "page_no": 1, "models": [{"model": "one"}]}}),
+    )
+    result = await provider_probe.probe_provider(
+        "dashscope", "https://dashscope.aliyuncs.com/compatible-mode/v1", "key"
+    )
+    assert result["models"] == [{"id": "one"}]
+    assert result["warning"] == "partial_models"
+    assert len(session.requests) == 2
+
+
+def test_malformed_metadata_is_ignored():
+    assert (
+        provider_probe.model_services(
+            {"type": {}, "capabilities": None, "supportedGenerationMethods": [{}]}
+        )
+        == []
+    )

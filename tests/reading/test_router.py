@@ -6,6 +6,7 @@ boot every other router; the routes themselves are the real ones.
 
 from __future__ import annotations
 
+import asyncio
 import io
 from pathlib import Path
 import zipfile
@@ -18,6 +19,7 @@ from deeptutor.api.routers import reading
 from deeptutor.learning.storage import LearningStore
 from deeptutor.reading import ReadingCatalogStore, ReadingError, ReadingStore
 from deeptutor.services.path_service import PathService
+from deeptutor.services.session import get_sqlite_session_store
 
 pymupdf = pytest.importorskip("pymupdf")
 
@@ -360,6 +362,12 @@ def test_epub_contract_exposes_source_refs_original_and_position(client: TestCli
     )
     assert saved.status_code == 200
     assert client.get(base).json()["source_anchor"] == "epubcfi(/6/2)"
+    # EPUB can save its CFI while text locations are still being generated.
+    # Missing progress must preserve the last known value, not fabricate 0%.
+    resumed = client.put(base, json={"locator": 1, "source_anchor": "epubcfi(/6/4)"})
+    assert resumed.status_code == 200
+    assert resumed.json()["percentage"] == 0.4
+    assert resumed.json()["source_anchor"] == "epubcfi(/6/4)"
     assert client.put(base, json={"locator": 2, "percentage": 0}).status_code == 400
 
 
@@ -494,6 +502,36 @@ def test_unit_text_is_addressed_by_locator(client: TestClient) -> None:
     assert body["locator"] == 2
     assert body["unit"] == "page"
     assert "scaled dot-product" in body["text"]
+
+
+@pytest.mark.parametrize("headings", [True, False])
+def test_large_markdown_upload_keeps_every_unit_accessible_through_the_api(client, headings):
+    """#1641: heading/fence fallback must never make the end of a document unreachable."""
+    chunks = ["# Opening\n\n"]
+    for index in range(24):
+        if headings:
+            chunks.append(f"## Section {index}\n\n")
+        chunks.append(f"Document paragraph {index}. " * 100 + "\n\n")
+        if index == 5:
+            chunks.append("````markdown\n```python\n# Code, not an outline heading\n```\n````\n\n")
+    chunks.append("END-OF-DOCUMENT-SENTINEL")
+    source = "".join(chunks)
+    response = client.post(
+        "/api/reading/materials", files={"file": ("long.md", source.encode(), "text/markdown")}
+    )
+    assert response.status_code == 200
+    material = response.json()
+    assert material["unit_count"] > 1
+    detail = client.get(f"/api/reading/materials/{material['material_id']}").json()
+    assert detail["unit_count"] == material["unit_count"]
+    units = []
+    for locator in range(1, material["unit_count"] + 1):
+        unit = client.get(f"/api/reading/materials/{material['material_id']}/units/{locator}")
+        assert unit.status_code == 200
+        units.append(unit.json()["text"])
+    assert "END-OF-DOCUMENT-SENTINEL" in units[-1]
+    # Section boundaries may normalize whitespace, but cannot discard source characters.
+    assert "".join("".join(units).split()) == "".join(source.split())
 
 
 def test_unit_text_out_of_range_is_a_400_with_the_real_range(client: TestClient) -> None:
@@ -801,6 +839,9 @@ def test_library_lists_collection_membership_and_totals(client: TestClient) -> N
         )
         assert created.status_code == 201, created.text
 
+    asyncio.run(get_sqlite_session_store().upsert_reading_quiz_reward(shared["material_id"], 1, 3))
+    asyncio.run(get_sqlite_session_store().upsert_reading_quiz_reward(shared["material_id"], 2, 2))
+
     payload = client.get("/api/reading/library/materials").json()
     rows = {row["material_id"]: row for row in payload["materials"]}
 
@@ -811,6 +852,8 @@ def test_library_lists_collection_membership_and_totals(client: TestClient) -> N
     assert rows[orphan["material_id"]]["collections"] == []
     assert rows[shared["material_id"]]["size_bytes"] > 0
     assert rows[shared["material_id"]]["unit_count"] == len(PAGES)
+    assert rows[shared["material_id"]]["quiz_stars"] == 5
+    assert rows[orphan["material_id"]]["quiz_stars"] == 0
     assert payload["counts"]["all"] == 2
     assert payload["counts"]["unassigned"] == 1
 

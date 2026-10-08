@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 import contextlib
+import hashlib
+import json
 import time
 from typing import Any
 
@@ -48,9 +50,41 @@ class TurnApplicationService:
             with workspace_context(payload.get("workspace_id")):
                 return await self.start_turn(payload)
         store, runtime = self._resolve()
+        reserve = getattr(store, "reserve_submission", None)
+        submission_turn = getattr(store, "submission_turn", None)
+        if (
+            request.client_submission_id
+            and request.persist_user_message
+            and not request.regenerate
+            and callable(reserve)
+            and callable(submission_turn)
+        ):
+            identity_payload = {
+                key: value
+                for key, value in payload.items()
+                if key not in {"session_id", "workspace_id"}
+            }
+            digest = hashlib.sha256(
+                json.dumps(identity_payload, sort_keys=True, default=str).encode()
+            ).hexdigest()
+            payload["session_id"] = await reserve(
+                request.client_submission_id, digest, request.session_id
+            )
+            prior = await submission_turn(request.client_submission_id)
+            if prior is not None and prior["status"] not in {"failed", "cancelled"}:
+                session = await store.get_session(payload["session_id"])
+                if session is None:
+                    raise RuntimeError("Conversation not found in this workspace.")
+                return session, prior
         try:
             session, turn = await runtime.start_turn(payload)
         except ActiveTurnConflict:
+            if request.client_submission_id and callable(reserve) and callable(submission_turn):
+                prior = await submission_turn(request.client_submission_id)
+                if prior is not None:
+                    session = await store.get_session(prior["session_id"])
+                    if session is not None:
+                        return session, prior
             # Retry once, and only after something was actually reclaimed, so a
             # session busy with a live turn still gets its conflict.
             session_id = str(payload.get("session_id") or "")
@@ -133,6 +167,8 @@ class TurnApplicationService:
     #
     # The cap below exists only for a leaked lease; it is not the normal path.
     _POST_DONE_MAX_SECONDS = 30.0
+    _CANCEL_WAIT_INTERVAL_SECONDS = 0.05
+    _ACTIVE_TURN_STATUSES = frozenset({"queued", "running", "waiting_input"})
 
     @staticmethod
     def _done_has_tail(event: dict[str, Any]) -> bool:
@@ -279,6 +315,40 @@ class TurnApplicationService:
         # WebSocket adapter must acknowledge that retry as success so a client
         # that lost the first ACK can retire its durable outbox entry.
         return True
+
+    @workspace_writer
+    async def cancel_turn_and_wait(
+        self,
+        turn_id: str,
+        *,
+        command_id: str | None = None,
+        timeout_seconds: float = 15.0,
+    ) -> bool:
+        """Stop a live turn and wait until its owner has finished teardown."""
+        if not await self.cancel_turn(turn_id, command_id=command_id):
+            return False
+        store, _runtime = self._resolve()
+        deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+        released = False
+        while True:
+            turn = await store.get_turn(turn_id)
+            status = str((turn or {}).get("status") or "")
+            lease = await self.coordinator.get_lease(turn_id)
+            if turn is not None and status not in self._ACTIVE_TURN_STATUSES and lease is None:
+                released = True
+                break
+            if turn is None and lease is None:
+                released = True
+                break
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(self._CANCEL_WAIT_INTERVAL_SECONDS)
+        if released:
+            # Lease release happens just before the owner's activity guard
+            # exits. Leave one polling interval so deletion does not race that
+            # final unwind.
+            await asyncio.sleep(self._CANCEL_WAIT_INTERVAL_SECONDS)
+        return released
 
     @workspace_writer
     async def submit_user_reply(

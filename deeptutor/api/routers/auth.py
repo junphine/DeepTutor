@@ -97,6 +97,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _COOKIE_NAME = "dt_token"
+AUTH_COOKIE_NAME = _COOKIE_NAME
 _COOKIE_MAX_AGE = TOKEN_EXPIRE_HOURS * 3600
 _USER_IMPORT_MAX_BYTES = 2 * 1024 * 1024
 _USER_IMPORT_MAX_ROWS = 500
@@ -496,7 +497,9 @@ def _install_request_workspace(request) -> None:
         catalog_management = library_request.get() or path.startswith(
             ("/api/skills", "/api/space/mcp")
         )
-        management = path.startswith(("/api/settings", "/api/auth", "/api/multi-user"))
+        management = path.startswith(
+            ("/api/settings", "/api/auth", "/api/multi-user", "/api/task-board")
+        )
         selected = install_workspace_scope(
             None if management or catalog_management else header if header is not None else query
         )
@@ -515,7 +518,10 @@ def _install_request_workspace(request) -> None:
         ):
             raise WorkspaceError("Restore this workspace before changing its data.")
         # Management/migration requests acquire their own exclusive lease.
-        if getattr(request, "method", None) is not None and not management:
+        task_board_request = path == "/api/task-board" or path.startswith("/api/task-board/")
+        if getattr(request, "method", None) is not None and (
+            not management or (task_board_request and path != "/api/task-board/events")
+        ):
             from deeptutor.services.workspace.activity import acquire_activity
 
             state = getattr(request, "state", None)
@@ -597,12 +603,37 @@ async def require_admin(
 _LEARNER_KB_READ_ROUTES = frozenset(
     {
         "/api/knowledge-bases",
+        "/api/knowledge-bases/list",
         "/api/knowledge-bases/{kb_name}",
         "/api/knowledge-bases/{kb_name}/files",
         "/api/knowledge-bases/{kb_name}/files/{filename:path}",
         "/api/knowledge-bases/{kb_name}/file-preview-text/{filename:path}",
         "/api/knowledge-bases/{kb_name}/visual-assets/{asset_id}",
+        "/api/knowledge-bases/{kb_name}/indexing-run",
+        "/api/knowledge-bases/{kb_name}/indexing-readiness",
         "/api/knowledge-bases/{kb_name}/progress",
+    }
+)
+
+
+_LEARNER_SETTINGS_WRITE_ROUTES = frozenset(
+    {
+        # UI preferences resolve through the per-user path service into the
+        # caller's OWN workspace (interface.json) — saving theme/language is
+        # safe for learning accounts.
+        ("PUT", "/api/settings/ui"),
+        # Per-user settings draft document. Applying a draft to the runtime
+        # catalog stays admin-gated in the endpoint itself.
+        ("PUT", "/api/settings/draft"),
+        ("DELETE", "/api/settings/draft"),
+        # Workspace self-management: the caller's own registrations inside
+        # their own scope directory. Data migration/export/root-migration
+        # routes under the same prefix stay denied — they move data across
+        # scopes and carry no internal admin gate.
+        ("PUT", "/api/settings/workspace"),
+        ("POST", "/api/settings/workspace/validate"),
+        ("POST", "/api/settings/workspace/registrations"),
+        ("PATCH", "/api/settings/workspace/registrations/{workspace_id}"),
     }
 )
 
@@ -614,6 +645,10 @@ def _learning_surface_for_path(
     for root, surface in (
         ("/api/reading", "reading"),
         ("/api/courses", "reading"),
+        ("/api/dashboard/learning-library/materials", "reading"),
+        ("/api/dashboard/learning-library/reading", "reading"),
+        ("/api/books", "books"),
+        ("/api/dashboard/learning-library/books", "books"),
         ("/api/chat", "chat"),
         ("/api/question", "chat"),
         ("/api/question-notebook", "chat"),
@@ -635,7 +670,33 @@ def _learning_surface_for_path(
         and route_path in _LEARNER_KB_READ_ROUTES
     ):
         return "reading"
+    # Learner-safe settings/workspace writes, matched on the resolved route
+    # template like the KB reads above: the same URL prefixes also host
+    # admin-grade operations (catalog apply, data migration), so a plain
+    # prefix match would open too much.
+    if route_path and (method.upper(), route_path) in _LEARNER_SETTINGS_WRITE_ROUTES:
+        return "chat"
+    # Choosing the model for a chat turn is part of chat. The handler is
+    # already grant-filtered. Match this exact path only: a prefix of
+    # /api/settings would also open catalog writes on the same router (#1222).
+    if method.upper() == "GET" and normalized == "/api/settings/llm-options":
+        return "chat"
     return ""
+
+
+def _resolved_route_path(request: Request) -> str | None:
+    """Keep include-time prefixes across FastAPI's flat and lazy routers."""
+    # Lazy router inclusion retains the original route in scope["route"].
+    # Its path omits include_router prefixes; the effective context owns the
+    # full matched template. Direct routes and older releases use the route.
+    fastapi_scope = request.scope.get("fastapi")
+    if isinstance(fastapi_scope, dict):
+        context = fastapi_scope.get("effective_route_context")
+        path = getattr(context, "path", None)
+        if isinstance(path, str):
+            return path
+    path = getattr(request.scope.get("route"), "path", None)
+    return path if isinstance(path, str) else None
 
 
 async def require_learning_surface(
@@ -646,12 +707,11 @@ async def require_learning_surface(
     from deeptutor.multi_user.learning_access import assert_learning_surface
 
     try:
-        route = request.scope.get("route")
         assert_learning_surface(
             _learning_surface_for_path(
                 request.url.path,
                 request.method,
-                route_path=getattr(route, "path", None),
+                route_path=_resolved_route_path(request),
             )
         )
     except PermissionError as exc:

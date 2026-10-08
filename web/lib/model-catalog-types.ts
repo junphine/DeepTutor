@@ -8,9 +8,11 @@ export type ProviderRef = {
 };
 export type Discovery = {
   status: string;
-  models: { id: string }[];
+  models: { id: string; services?: ServiceName[] }[];
   capabilities?: { category: string; evidence: string }[];
   checked_at?: string;
+  http_status?: number | null;
+  warning?: string;
 };
 export type ServiceName =
   | "llm"
@@ -64,6 +66,7 @@ export type CatalogModel = {
   sample_rate?: string;
   instructions?: string;
   resource_id?: string;
+  request_timeout?: string | number;
   response_format?: string;
   language?: string;
   // Image generation: pixel size (e.g. "1024x1024"), quality, and style.
@@ -85,7 +88,12 @@ export type LlmContextWindowDetection = {
   detectedAt?: string;
 };
 
+/** User-selected service access. Missing entries follow registry/live metadata. */
+export type ProviderServiceOverride = { enabled: boolean; binding?: string; base_url?: string };
+export type ProviderServiceOverrides = Partial<Record<ServiceName, ProviderServiceOverride>>;
+
 export type CatalogProfile = {
+  service_overrides?: ProviderServiceOverrides;
   user_name?: string;
   provider_ref?: ProviderRef;
   provider_only?: boolean;
@@ -156,6 +164,7 @@ export type TaskKindInfo = { id: string; group: string };
  * they were typed, not how they resolve.
  */
 export type CatalogConnection = {
+  service_overrides?: ProviderServiceOverrides;
   source_service?: ServiceName;
   discovery?: Discovery;
   api_format?: ApiFormat;
@@ -222,6 +231,8 @@ export type VoiceModelOption = {
   languages: VoiceChoice[];
   formats: string[];
   language_note?: string;
+  configuration_note?: string;
+  docs_url?: string;
   max_input_chars?: number;
   speed?: { min: number; max: number; step: number };
   sample_rates?: number[];

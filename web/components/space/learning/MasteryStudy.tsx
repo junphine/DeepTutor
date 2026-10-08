@@ -242,6 +242,21 @@ export function MasteryStudy({
     () => buildChatOutline(state.messages, state.selectedBranches),
     [state.messages, state.selectedBranches],
   );
+  // The study composer lists KB sources by label, but the stored request
+  // snapshot keeps the qualified ref — resolve it so sent-message reference
+  // chips read the same way.
+  const kbDisplayNames = useMemo(
+    () =>
+      Object.fromEntries(
+        (topic?.sources ?? [])
+          .filter(
+            (source) =>
+              source.kind === "knowledge_base" && source.source_id && source.label,
+          )
+          .map((source) => [source.source_id as string, source.label]),
+      ),
+    [topic],
+  );
   const jumpToTurn = useCallback(
     (key: string) => {
       if (
@@ -794,6 +809,11 @@ export function MasteryStudy({
                       onSubmitUserReply={submitUserReply}
                       onAnswerMasteryQuestion={answerMasteryQuestion}
                       onSkipMasteryQuestion={skipMasteryQuestion}
+                      onChallengeMasteryQuestion={(questionId) => {
+                        if (state.isStreaming || sessionLoading || sessionError) return false;
+                        sendMessage(t('Please review assessment {{questionId}} against its original source evidence. If it is unsupported, invalidate it and recompute learning state. Do not grant mastery merely because I challenged it.', { questionId }));
+                        return true;
+                      }}
                       onPreviewAttachment={handlePreviewMessageAttachment}
                       onConfirmOutline={confirmResearchOutline}
                       onLoadMessageTrace={(messageId) =>
@@ -807,6 +827,7 @@ export function MasteryStudy({
                         }
                       }}
                       availableKbNames={new Set(knowledgeBases)}
+                      kbDisplayNames={kbDisplayNames}
                       showModeBadge={false}
                     />
                   </div>

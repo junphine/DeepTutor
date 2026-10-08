@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ChatMessageList } from '@/features/chat/messages'
 import type { StreamEvent } from '@/features/chat/model/protocol'
-import { WatchingProvider } from '@/context/WatchingContext'
 import { initI18n } from '@/i18n/init'
 
 initI18n('en')
@@ -36,6 +35,45 @@ describe('chat message feature', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Worker lost during this turn')
     await userEvent.setup().click(screen.getByRole('button', { name: 'Retry' }))
     expect(retry).toHaveBeenCalledOnce()
+  })
+
+  // The snapshot stores the qualified KB ref, but the reference chip under a
+  // sent message used to print that ref verbatim — while the composer chip
+  // for the same resource showed its readable name. The label now resolves
+  // through the selection catalog, falling back to the ref when unmapped.
+  it('labels sent-message KB references with the catalog name, not the raw ref', () => {
+    const renderWithKb = (kb: string[], kbDisplayNames?: Record<string, string>) =>
+      render(
+        <ChatMessageList
+          messages={[{
+            id: 7,
+            role: 'user',
+            content: 'Summarize the papers',
+            parentMessageId: null,
+            requestSnapshot: {
+              content: 'Summarize the papers',
+              enabledTools: [],
+              knowledgeBases: kb,
+              language: 'en',
+            },
+          }]}
+          isStreaming={false}
+          onCopyAssistantMessage={vi.fn(async () => undefined)}
+          onRegenerateMessage={() => undefined}
+          kbDisplayNames={kbDisplayNames}
+        />,
+      )
+    // Identity is preserved: an unmapped ref still renders, as itself.
+    renderWithKb(['account:kb:legacy_kb'])
+    expect(screen.getByText('account:kb:legacy_kb')).toBeVisible()
+
+    const { unmount } = renderWithKb(
+      ['workspace:ws-1:kb:example_kb'],
+      { 'workspace:ws-1:kb:example_kb': 'example_kb' },
+    )
+    expect(screen.getByText('example_kb')).toBeVisible()
+    expect(screen.queryByText('workspace:ws-1:kb:example_kb')).toBeNull()
+    unmount()
   })
 
   it('renders a user row with keyboard-accessible message actions', async () => {
@@ -116,7 +154,7 @@ describe('chat message feature', () => {
     })
 
     const { container } = render(
-      <WatchingProvider>
+
         <ChatMessageList
           messages={[
             {
@@ -154,7 +192,7 @@ describe('chat message feature', () => {
           onCopyAssistantMessage={async () => undefined}
           onRegenerateMessage={() => undefined}
         />
-      </WatchingProvider>
+
     )
 
     const fold = container.querySelector('div.grid')
@@ -202,13 +240,13 @@ describe('empty reply outcomes', () => {
       type: 'error', source: 'chat', stage: '', content, timestamp: 0,
       metadata: status === 'legacy' ? {} : { turn_terminal: true, status },
     }];
-    render(<WatchingProvider><ChatMessageList
+    render(<ChatMessageList
       messages={[{ id: 1, role: 'user', content: 'hi' }, { id: 2, role: 'assistant', content: '', events }]}
       isStreaming={false}
       onCopyAssistantMessage={async () => undefined}
       onRegenerateMessage={() => undefined}
       onDeleteTurn={() => undefined}
-    /></WatchingProvider>);
+    />);
     expect(screen.getByText(expected)).toBeVisible();
     if (status === 'cancelled') expect(screen.queryByRole('alert')).toBeNull();
   });

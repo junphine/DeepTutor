@@ -324,6 +324,7 @@ class KnowledgeBaseManager:
 
         # Config file to track knowledge bases
         self.config_file = self.base_dir / "kb_config.json"
+        self._config_mtime: float | None = None
         self.config = self._load_config()
 
         # PocketBase sync — enabled when integrations.pocketbase_url is set.
@@ -337,6 +338,9 @@ class KnowledgeBaseManager:
         """Load knowledge base configuration from the canonical kb_config.json file."""
         if self.config_file.exists():
             try:
+                current_mtime = self.config_file.stat().st_mtime
+                if self.config is not None and self._config_mtime == current_mtime:
+                    return self.config
                 with open(self.config_file, encoding="utf-8") as f:
                     with file_lock_shared(f):
                         content = f.read()
@@ -405,9 +409,11 @@ class KnowledgeBaseManager:
                 if config_changed:
                     try:
                         atomic_write_json(self.config_file, config)
+                        self._config_mtime = self.config_file.stat().st_mtime
                     except Exception as save_err:
                         logger.warning(f"Failed to persist normalized KB config: {save_err}")
 
+                self._config_mtime = current_mtime
                 return config
             except (json.JSONDecodeError, Exception) as e:
                 logger.warning(f"Error loading config: {e}")
@@ -422,6 +428,7 @@ class KnowledgeBaseManager:
         truncate the config before the lock was even acquired.
         """
         atomic_write_json(self.config_file, self.config)
+        self._config_mtime = self.config_file.stat().st_mtime
 
     def _sync_kb_to_pb(self, name: str, kb_entry: dict) -> None:
         """

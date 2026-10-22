@@ -119,7 +119,7 @@ def test_bundle_tamper_and_unsafe_names_fail_closed(tmp_path: Path) -> None:
         source,
         ParsedDocument(markdown="notes", engine="text_only", source_hash="h", parser_signature="s"),
     )
-    assert staged.process_options == "F"
+    assert staged.process_options == "R"
     (staged.bundle_dir / "markdown.utf8").write_text("tampered", encoding="utf-8")
     with pytest.raises(ingress.IngressError, match="Digest mismatch"):
         ingress.load_verified_bundle(working, "notes.md")

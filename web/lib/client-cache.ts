@@ -18,7 +18,7 @@ export async function withClientCache<T>(
   loader: () => Promise<T>,
   options: CacheOptions = {},
 ): Promise<T> {
-  const { ttlMs = 30_000, force = false } = options;
+  const { ttlMs = 600_000, force = false } = options;
 
   if (typeof window === "undefined") {
     return loader();

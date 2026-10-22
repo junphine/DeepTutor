@@ -185,6 +185,13 @@ def apply_llm_selection_to_catalog(
                 service["active_profile_id"] = resolved.profile_id
                 service["active_model_id"] = resolved.model_id
                 return selected
+        if 'llm-model-default' == resolved.model_id or not resolved.model_id:
+            for model in profile.get("models", []) or []:
+                if isinstance(model, dict):
+                    service["active_profile_id"] = resolved.profile_id
+                    service["active_model_id"] = model.get("id")
+                    return selected
+
         break
 
     raise ValueError("Invalid LLM selection: selected profile/model was not found.")

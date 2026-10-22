@@ -179,18 +179,20 @@ class QwenPawACPBackend(SubagentBackend):
                 await self._handle_acp_message(message, emit)
 
         except Exception as exc:
+            process = None
             logger.warning("qwenpaw ACP consult failed: %s", exc, exc_info=True)
             result.success = False
             result.error = str(exc)
             await emit(EVENT_ERROR, result.error, {})
         finally:
             # 关键：等待子进程退出 + stderr_task 完成
-            await process.wait()
-            returncode = str(process.returncode) if process.returncode is not None else "0"
-            try:
-                await stderr_task
-            except Exception as et:
-                logger.exception("stderr reader failed")
+            if process:
+                await process.wait()
+                returncode = str(process.returncode) if process.returncode is not None else "0"
+                try:
+                    await stderr_task
+                except Exception as et:
+                    logger.exception("stderr reader failed")
 
         result.final_text = "\n".join(answer_parts).strip()
         if returncode != "0" and result.success:

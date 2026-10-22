@@ -254,11 +254,11 @@ def freeze_document(working_dir: Path, source: Path, parsed: ParsedDocument) -> 
             )
             if kinds & names
         )
-        process_options = f"P{modalities}" if frozen_blocks else "F"
+        process_options = f"P{modalities}" if frozen_blocks else "R"
         chunk_options = (
             {"paragraph_semantic": {"chunk_token_size": 1200}}
             if frozen_blocks
-            else {"fixed_token": {}}
+            else {"recursive_character": {}}
         )
         manifest = {
             "parser_bridge_schema": PARSER_BRIDGE_SCHEMA,

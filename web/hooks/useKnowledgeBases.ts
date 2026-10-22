@@ -187,7 +187,7 @@ export function useKnowledgeBases() {
     if (!hasActiveWork) return;
     const interval = window.setInterval(() => {
       void load({ force: true, showSpinner: false });
-    }, 4000);
+    }, 60000*5);
     return () => window.clearInterval(interval);
   }, [hasActiveWork, load]);
 

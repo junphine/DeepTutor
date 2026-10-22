@@ -191,7 +191,6 @@ export interface KnowledgeBase {
     /** SQLite store of a connected MarginNote 4 library (when type === "marginnote4"). */
     db_path?: string;
     /** Connected Kiwix archive; article bytes remain on the configured server. */
-    server_url?: string;
     zim_name?: string;
     zim_title?: string;
     /** Backend of a connected subagent (when type === "subagent"): "claude_code" | "codex" | "antigravity" | "kimi" | "opencode" | "mimo" | "hermes" | "openclaw" | "deepseek_harness" | "partner". */

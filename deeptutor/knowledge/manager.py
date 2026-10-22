@@ -85,7 +85,7 @@ _ORPHAN_PRUNE_GRACE_SECONDS = 60
 
 # External/manual index changes are re-probed within this interval (#1711).
 # Normal indexing writes kb_config.json, which invalidates the snapshot at once.
-_CATALOG_CACHE_SECONDS = 2.0
+_CATALOG_CACHE_SECONDS = 30.0
 
 
 def _entry_updated_after(kb_entry: dict | None, cutoff: datetime) -> bool:

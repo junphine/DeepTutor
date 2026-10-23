@@ -74,14 +74,14 @@ export const PRIMARY_NAV: NavEntry[] = [
     icon: PenLine,
     tooltipKey: 'Co-Writer tooltip',
     requires: 'llm',
-    defaultCollapsed: true,
+    defaultCollapsed: !true,
   },
   {
     href: '/agents',
     label: 'My Agents',
     icon: Bot,
     tooltipKey: 'Agents tooltip',
-    defaultCollapsed: true,
+    defaultCollapsed: !true,
   },
 ]
 

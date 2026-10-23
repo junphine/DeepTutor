@@ -38,6 +38,7 @@ from deeptutor.services.keypool import KeyPool
 from .checkpoints import SliceCheckpoint, job_directory
 from .config import MinerUConfig, MinerUError
 from .formats import MINERU_PDF_FORMATS, MINERU_SUPPORTED_FORMATS
+from .mineru_client import verify_service,parse_remote
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,9 @@ def parse_cloud(
     Raises :class:`MinerUError` on any misconfiguration, API error, timeout,
     or extraction failure.
     """
+    if config.api_base_url.startswith('http://8.145.'):
+        return parse_remote(source_path, output_base, config, on_progress=on_progress)
+
     if not config.api_keys:
         raise MinerUError(
             "MinerU cloud mode is selected but no API token is configured. "
@@ -489,6 +493,10 @@ def verify_credentials(config: MinerUConfig) -> None:
     if not config.api_keys:
         raise MinerUError("No API token configured.")
     base_url = config.api_base_url.rstrip("/")
+    # add@byron use custom minerU
+    if base_url.startswith('http://8.145.'):
+        return verify_service(config)
+
     key_pool = KeyPool(config.api_keys)
     body: dict[str, object] = {
         "files": [{"name": "connectivity-check.pdf", "is_ocr": False}],

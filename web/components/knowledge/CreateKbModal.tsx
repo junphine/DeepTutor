@@ -50,7 +50,7 @@ import {
   validateFiles,
 } from "@/lib/knowledge-helpers";
 import { forbiddenKbNameChars, isValidKbName } from "@/lib/kb-name";
-import { listWorkspaces, type ChatWorkspaceRegistration } from "@/lib/workspaces-api";
+import { activeWorkspaceId } from "@/lib/workspace-scope";
 import FileDropZone from "./FileDropZone";
 import ImaConnectionFields from "./ImaConnectionFields";
 import KnowledgeEngineIcon from "./KnowledgeEngineIcon";
@@ -153,8 +153,6 @@ export default function CreateKbModal({
   const [description, setDescription] = useState("");
   const [provider, setProvider] = useState("llamaindex");
   const [files, setFiles] = useState<File[]>([]);
-  const [storageWorkspaceId, setStorageWorkspaceId] = useState("");
-  const [storageWorkspaces, setStorageWorkspaces] = useState<ChatWorkspaceRegistration[]>([]);
   const [pageIndexMode, setPageIndexMode] = useState<"" | "flash" | "standard">(
     "",
   );
@@ -236,11 +234,6 @@ export default function CreateKbModal({
       : engineDefaultSummary;
   const [defaultsRevision, setDefaultsRevision] = useState(0);
   const refreshCatalog = llmCatalog.refresh;
-
-  useEffect(() => {
-    if (!isOpen) return;
-    void listWorkspaces().then(setStorageWorkspaces).catch(() => setStorageWorkspaces([]));
-  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -573,7 +566,8 @@ export default function CreateKbModal({
             name: trimmed,
             provider,
             files: selection.validFiles,
-            storageWorkspaceId,
+            // A new base is stored in the workspace the library is opened in.
+            storageWorkspaceId: activeWorkspaceId(),
             pageindexMode:
               isPageIndexOSS && pageIndexMode ? pageIndexMode : undefined,
             searchMode: retrievalMode || undefined,
@@ -698,39 +692,13 @@ export default function CreateKbModal({
             </span>
           </label>
           <input
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            disabled={submitting}
-            placeholder={t("e.g. Research papers on machine learning")}
-            className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[13px] text-[var(--foreground)] outline-none transition-colors focus:border-[var(--foreground)]/25 disabled:opacity-50"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              disabled={submitting}
+              placeholder={t("e.g. Research papers on machine learning")}
+              className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[13px] text-[var(--foreground)] outline-none transition-colors focus:border-[var(--foreground)]/25 disabled:opacity-50"
           />
         </div>
-
-        {mode === "new" && !isLightRagServer && !isWeKnora && (
-            <div>
-              <label className="mb-1 block text-[12px] font-medium text-[var(--foreground)]">
-                {t("Storage workspace")}
-              </label>
-              <select
-                  value={storageWorkspaceId}
-                  onChange={(event) => setStorageWorkspaceId(event.target.value)}
-                  disabled={submitting}
-                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[13px] text-[var(--foreground)]"
-              >
-                <option value="">{t("Account library")}</option>
-                {storageWorkspaces
-                    .filter((row) => row.kind === "workspace" && !row.archived && row.status === "ready")
-                    .map((row) => (
-                        <option key={row.workspace_id} value={row.workspace_id}>
-                          {row.display_name}
-                        </option>
-                    ))}
-              </select>
-              <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
-                {t("Documents and indexes are stored in the selected workspace.")}
-              </p>
-            </div>
-        )}
 
         {mode === "new" ? (
           <NewModeFields

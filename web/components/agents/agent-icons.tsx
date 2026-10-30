@@ -262,5 +262,7 @@ export function agentKindLabel(kind: string | undefined): string {
   if (kind === "hermes_remote") return "Hermes Agent (remote)";
   if (kind === "openclaw") return "OpenClaw";
   if (kind === "deepseek_harness") return "DeepSeek Harness";
+  if (kind === "qwenpaw_acp") return "QwenPaw ACP";
+  if (kind === "qwenpaw_remote") return "QwenPaw Agent (remote)";
   return kind ?? "";
 }

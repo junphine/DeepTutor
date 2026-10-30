@@ -3547,6 +3547,8 @@ async def create_knowledge_base(
     # field is omitted; only an actual submitted string selects a destination.
     if not isinstance(storage_workspace_id, str):
         storage_workspace_id = None
+    if not isinstance(description, str):
+        description = ""
     try:
         valid_name = validate_knowledge_base_name(name)
     except ValueError as exc:
@@ -3585,6 +3587,7 @@ async def create_knowledge_base(
                         rel_paths,
                         indexing_llm,
                         embedding_model,
+                        description,
                     )
                 result["id"] = resource_id
                 return result
@@ -3607,6 +3610,7 @@ async def _create_knowledge_base_owned(
     rel_paths: list[str] = Form(None),
     indexing_llm: str = Form(""),
     embedding_model: str = Form(""),
+    description: str = Form(""),
 ) -> dict[str, Any]:
     """Create a new knowledge base and initialize it with files."""
     try:

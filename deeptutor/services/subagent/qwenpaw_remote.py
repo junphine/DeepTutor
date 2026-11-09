@@ -84,14 +84,15 @@ class QwenPawRemoteBackend(SubagentBackend):
         returncode = "0"
 
         # Send the initial prompt via stdin (as ACP prompt message)
-        prompt = question
+        prompt_msgs =[{"type":"text","text":question}]
+        system_prompt = []
         if config.system_prompt.strip() and not session_id:
-            prompt = f"{config.system_prompt.strip()}\n\n{question}"
-        if images:
-            prompt += "\n\nAttached local files:\n" + "\n".join(f"- {path}" for path in images)
-        # Send as ACP prompt via sessionUpdate/init pattern
-        prompt_msgs =[{"type":"text","text":prompt}]
+            system_prompt = [{"type":"text","text":config.system_prompt.strip()}]
 
+        if images:
+            prompt = "\n\nAttached local files:\n" + "\n".join(f"- {path}" for path in images)
+            system_prompt = [{"type":"text","text":prompt}]
+        # Send as ACP prompt via sessionUpdate/init pattern
         async def emit(kind: str, text: str, raw: dict[str, Any] | None = None) -> None:
             result.event_count += 1
             await on_event(SubagentEvent(kind=kind, text=text, raw=raw or {}))
@@ -100,9 +101,9 @@ class QwenPawRemoteBackend(SubagentBackend):
             current_user = get_current_user()
             qwenpaw_client = QwenPawRemoteClient(config.base_url,agent_id=partner_id,username=current_user.username)
             if images: # read images content
-                qwenpaw_result = qwenpaw_client.process_directory(prompt_msgs,images,cwd,session_id=sid)
+                qwenpaw_result = qwenpaw_client.process_directory(prompt_msgs,images,cwd,system_prompt=system_prompt,session_id=sid)
             else:
-                qwenpaw_result = qwenpaw_client.prompt(prompt_msgs,cwd,session_id=sid)
+                qwenpaw_result = qwenpaw_client.prompt(prompt_msgs,cwd,system_prompt=system_prompt,session_id=sid)
             result.success = qwenpaw_result['success']
             result.final_text = qwenpaw_result['content']
             result.error = qwenpaw_result['error']

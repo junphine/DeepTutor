@@ -49,12 +49,19 @@ import {
   fetchMasteryTopic,
   fetchMasteryTopicSessions,
   fetchLearningBoard,
+  fetchMasteryReviewStrategies,
   redoProgress,
   renameProgress,
   setMasteryObjectiveOverride,
   updateMasteryReviewSettings,
+  bindMasteryReviewStrategy,
+  createMasteryReviewStrategy,
+  deleteMasteryReviewStrategy,
+  duplicateMasteryReviewStrategy,
+  updateMasteryReviewStrategy,
   type MasteryTopic,
   type BoardResult,
+  type ReviewStrategyInput,
   type TopicSession,
 } from "@/lib/learning-api";
 import { setPendingPrompt } from "@/lib/pending-prompt";
@@ -84,6 +91,13 @@ export default function MasteryTopicPage() {
   const [mutationBusy, setMutationBusy] = useState(false);
   const [retentionBusy, setRetentionBusy] = useState(false);
   const [retentionError, setRetentionError] = useState<string | null>(null);
+  const [strategies, setStrategies] = useState<
+    Awaited<ReturnType<typeof fetchMasteryReviewStrategies>>["strategies"]
+  >([]);
+  const [strategiesLoading, setStrategiesLoading] = useState(true);
+  const [strategiesError, setStrategiesError] = useState<string | null>(null);
+  const [strategyBusy, setStrategyBusy] = useState(false);
+  const [strategyError, setStrategyError] = useState<string | null>(null);
   const editorTriggerRef = useRef<HTMLElement | null>(null);
   const confirmTriggerRef = useRef<HTMLElement | null>(null);
   const activity = useMasteryPathActivity(pathId || null);
@@ -131,6 +145,25 @@ export default function MasteryTopicPage() {
       setSessionsLoading(false);
     }
   }, [pathId]);
+
+  const loadStrategies = useCallback(async () => {
+    setStrategiesLoading(true);
+    try {
+      const result = await fetchMasteryReviewStrategies({
+        cache: "no-store",
+      });
+      setStrategies(result.strategies);
+      setStrategiesError(null);
+    } catch {
+      setStrategiesError(t("Could not load review strategies. Try again."));
+    } finally {
+      setStrategiesLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    void loadStrategies();
+  }, [loadStrategies]);
 
   useEffect(() => {
     void loadTopic();
@@ -225,6 +258,86 @@ export default function MasteryTopicPage() {
     }
   };
 
+  const handleStrategyChange = async (templateId: string) => {
+    setStrategyBusy(true);
+    setStrategyError(null);
+    try {
+      const saved = await bindMasteryReviewStrategy(pathId, templateId);
+      setTopic(saved);
+      activity.refresh();
+    } catch {
+      setStrategyError(t("Could not save review strategy. Try again."));
+    } finally {
+      setStrategyBusy(false);
+    }
+  };
+
+  const handleStrategySave = async (
+    input: ReviewStrategyInput,
+    templateId?: string,
+  ) => {
+    setStrategyBusy(true);
+    setStrategyError(null);
+    try {
+      const savedStrategy = templateId
+        ? await updateMasteryReviewStrategy(templateId, input)
+        : await createMasteryReviewStrategy(input);
+      const savedTopic = await bindMasteryReviewStrategy(
+        pathId,
+        savedStrategy.template_id,
+      );
+      setTopic(savedTopic);
+      await loadStrategies();
+      activity.refresh();
+    } catch (error) {
+      setStrategyError(
+        error instanceof Error
+          ? error.message
+          : t("Could not save review strategy. Try again."),
+      );
+    } finally {
+      setStrategyBusy(false);
+    }
+  };
+
+  const handleStrategyDuplicate = async (
+    templateId: string,
+    name: string,
+  ) => {
+    setStrategyBusy(true);
+    setStrategyError(null);
+    try {
+      const copy = await duplicateMasteryReviewStrategy(templateId, name);
+      const savedTopic = await bindMasteryReviewStrategy(
+        pathId,
+        copy.template_id,
+      );
+      setTopic(savedTopic);
+      await loadStrategies();
+      activity.refresh();
+    } catch {
+      setStrategyError(t("Could not duplicate review strategy. Try again."));
+    } finally {
+      setStrategyBusy(false);
+    }
+  };
+
+  const handleStrategyDelete = async (templateId: string) => {
+    setStrategyBusy(true);
+    setStrategyError(null);
+    try {
+      const savedTopic = await bindMasteryReviewStrategy(pathId, "");
+      await deleteMasteryReviewStrategy(templateId);
+      setTopic(savedTopic);
+      await loadStrategies();
+      activity.refresh();
+    } catch {
+      setStrategyError(t("Could not delete review strategy. Try again."));
+    } finally {
+      setStrategyBusy(false);
+    }
+  };
+
   const handleReset = async () => {
     setMutationBusy(true);
     try {
@@ -292,10 +405,13 @@ export default function MasteryTopicPage() {
     );
   }
 
-  const nextCopy = NEXT_LABELS[topic.next.action] ?? {
-    zh: topic.next.reason,
-    en: topic.next.reason,
-  };
+  const nextLabel = NEXT_LABELS[topic.next.action];
+  // The reason comes from the server as-is; only the known labels are catalog copy.
+  const nextCopy = nextLabel
+    ? zh
+      ? nextLabel.zh
+      : t(nextLabel.en)
+    : topic.next.reason;
   const progress = topic.map.counts.total
     ? Math.round((topic.map.counts.mastered / topic.map.counts.total) * 100)
     : 0;
@@ -434,9 +550,7 @@ export default function MasteryTopicPage() {
                   ? t(
                       "This goal has no outline yet. Open a session and the tutor will design one with you.",
                     )
-                  : zh
-                    ? nextCopy.zh
-                    : nextCopy.en}
+                  : nextCopy}
               </p>
             </div>
           </div>
@@ -476,7 +590,7 @@ export default function MasteryTopicPage() {
               {nextCta
                 ? zh
                   ? nextCta.zh
-                  : nextCta.en
+                  : t(nextCta.en)
                 : topic.session_count > 0
                   ? t("Continue learning")
                   : t("Begin first waypoint")}
@@ -485,7 +599,7 @@ export default function MasteryTopicPage() {
           )}
         </section>
 
-        <div className="mt-6 grid min-h-0 flex-1 items-start gap-7 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-stretch">
+        <div className="mt-6 grid min-h-0 flex-1 grid-cols-1 items-start gap-7 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-stretch">
           {needsRouteRepair ? (
             // A goal starts without an outline: the first session is where the
             // tutor asks about the learner and designs one with them. Writing
@@ -524,7 +638,7 @@ export default function MasteryTopicPage() {
               </button>
             </section>
           ) : (
-            <div className="flex min-h-0 flex-col gap-5 lg:h-full">
+            <div className="flex min-h-0 min-w-0 flex-col gap-5 lg:h-full">
               {/* The three things a mastery goal owns — outline, review plan,
                   sessions — are named the same way and sit at the same level,
                   so the page reads as one goal's assets rather than a map with
@@ -568,7 +682,13 @@ export default function MasteryTopicPage() {
               </div>
               {/* The outline is the tall thing on this page, so it is the one
                   that scrolls. Everything else keeps its place. */}
-              <div className="min-h-0 lg:min-h-[260px] lg:flex-1 lg:overflow-y-auto lg:pr-1">
+              <div
+                className={`min-h-0 min-w-0 lg:min-h-[260px] lg:flex-1 ${
+                  topicView === "board"
+                    ? "flex flex-col"
+                    : "lg:overflow-y-auto lg:pr-1"
+                }`}
+              >
                 {topicView === "outline" ? (
                 <ModuleOutline
                   topic={topic}
@@ -606,6 +726,18 @@ export default function MasteryTopicPage() {
                 retentionBusy={retentionBusy}
                 retentionError={retentionError}
                 onRetentionChange={(value) => void handleRetentionChange(value)}
+                strategies={strategies}
+                selectedStrategyId={
+                  topic.review_settings?.strategy?.template_id ?? ""
+                }
+                strategyLoading={strategiesLoading}
+                strategyError={strategiesError}
+                strategyBusy={strategyBusy}
+                onStrategyChange={(value) => void handleStrategyChange(value)}
+                onRetryStrategies={() => void loadStrategies()}
+                onStrategySave={handleStrategySave}
+                onStrategyDuplicate={handleStrategyDuplicate}
+                onStrategyDelete={handleStrategyDelete}
                 zh={zh}
                 onSelect={(objectiveId) => {
                   setSelectedId(objectiveId);
@@ -623,7 +755,7 @@ export default function MasteryTopicPage() {
               />
             </div>
           )}
-          <div className="flex min-h-0 flex-col gap-5 lg:h-full">
+          <div className="flex min-h-0 min-w-0 flex-col gap-5 lg:h-full">
             <LearnerProfileCard profile={topic.learner_profile} />
             <SessionCamp
               pathId={pathId}

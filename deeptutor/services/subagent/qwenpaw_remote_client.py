@@ -354,7 +354,7 @@ class QwenPawRemoteClient:
 
             print(f"找到 {len(files)} 个文件:\n")
             for i, file_path in enumerate(files, 1):
-                print(f"  {i}. {str(f)}")
+                print(f"  {i}. {str(file_path)}")
 
         except Exception as e:
             print(f"x 扫描失败：{e}")

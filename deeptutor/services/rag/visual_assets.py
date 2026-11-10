@@ -104,6 +104,13 @@ def _text(value: Any) -> str:
     return ""
 
 
+def _source_in_tree(source_path: Any, tree_root: str) -> bool:
+    """True when ``source_path`` is inside (or equals) the ``tree_root`` folder."""
+    if not isinstance(source_path, str):
+        return False
+    return source_path == tree_root or source_path.startswith(tree_root + "/")
+
+
 def _block_details(
     blocks: list[dict[str, Any]] | None,
     asset: Path,
@@ -374,6 +381,31 @@ class VisualAssetStore:
             key: value
             for key, value in prior.items()
             if value.get("source_path") != source_relative_path
+        }
+        if len(updated) == len(prior):
+            return
+        self._atomic_write(
+            self.manifest_path,
+            json.dumps(
+                {"version": 1, "assets": updated}, ensure_ascii=False, sort_keys=True
+            ).encode(),
+        )
+        for old_id, old_record in prior.items():
+            if old_id not in updated:
+                self._path(old_id, str(old_record.get("mime_type"))).unlink(missing_ok=True)
+
+    def remove_source_tree(self, source_relative_path: str) -> None:
+        """Remove every asset whose source lives under ``source_relative_path``.
+
+        Unlike :meth:`remove_source` (exact match), this drops a whole folder's
+        assets — the source itself plus any descendants — used when a KB folder
+        is deleted wholesale.
+        """
+        prior = self._read_manifest()
+        updated = {
+            key: value
+            for key, value in prior.items()
+            if not _source_in_tree(value.get("source_path"), source_relative_path)
         }
         if len(updated) == len(prior):
             return

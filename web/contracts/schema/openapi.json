@@ -960,6 +960,11 @@
       },
       "Body_create_knowledge_base_api_knowledge_bases_post": {
         "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
           "embedding_model": {
             "default": "",
             "title": "Embedding Model",
@@ -2908,6 +2913,11 @@
       },
       "ConnectFolderRequest": {
         "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
           "folder_path": {
             "title": "Folder Path",
             "type": "string"
@@ -2987,6 +2997,11 @@
             "title": "Api Key",
             "type": "string"
           },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -3051,6 +3066,11 @@
       },
       "ConnectSubagentRequest": {
         "properties": {
+          "agent_id": {
+            "default": "",
+            "title": "Agent Id",
+            "type": "string"
+          },
           "agent_kind": {
             "title": "Agent Kind",
             "type": "string"
@@ -3058,6 +3078,11 @@
           "cwd": {
             "default": "",
             "title": "Cwd",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
             "type": "string"
           },
           "name": {
@@ -3076,6 +3101,11 @@
         "properties": {
           "api_key": {
             "title": "Api Key",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
             "type": "string"
           },
           "knowledge_base_id": {
@@ -28879,6 +28909,88 @@
           }
         },
         "summary": "Create Kb Folder",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
+    "/api/knowledge-bases/{kb_name}/folders/{folder_path}": {
+      "delete": {
+        "description": "Remove a whole folder and everything beneath it from a knowledge base.\n\nDeletes the folder, its files, and any nested subfolders. Like single-file\ndeletion this works while the KB is in an *error* state, and connected\n(read-only) / legacy KBs are rejected. Vectors are not pruned here;\n``was_indexed`` tells the caller whether a re-index is needed to purge the\nremoved documents from retrieval.",
+        "operationId": "delete_kb_folder_api_knowledge_bases__kb_name__folders__folder_path__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_name",
+            "required": true,
+            "schema": {
+              "title": "Kb Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folder_path",
+            "required": true,
+            "schema": {
+              "title": "Folder Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Kb Folder",
         "tags": [
           "knowledge-bases"
         ]

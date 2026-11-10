@@ -198,6 +198,40 @@ def test_queued_sync_returns_counts_and_task_id(
     assert response.json()["task_id"] == "sync-task"
 
 
+def test_queued_sync_stages_under_the_linked_folder_name(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    manager = _FolderManager(tmp_path)
+    manager.detect_result = {
+        "new_files": [str(tmp_path / "notes" / "new.md")],
+        "modified_files": [],
+        "new_count": 1,
+        "modified_count": 0,
+    }
+    _patch_manager(monkeypatch, manager)
+    monkeypatch.setattr(
+        knowledge_router_module,
+        "_build_unique_task_id",
+        lambda *_args: "sync-task",
+    )
+
+    captured: dict[str, object] = {}
+
+    async def _capture_task(*_args, **_kwargs):
+        captured.update(_kwargs)
+        return None
+
+    monkeypatch.setattr(knowledge_router_module, "run_upload_processing_task", _capture_task)
+
+    with TestClient(_build_app()) as client:
+        response = client.post("/api/knowledge-bases/kb/sync-folder/folder-1")
+
+    assert response.status_code == 200
+    # Staging root is the linked folder's parent, so each file lands under a
+    # top-level folder named after the linked folder ("notes").
+    assert captured["folder_root"] == str(tmp_path)
+
+
 def test_link_folder_rejects_connected_kb(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     manager = _FolderManager(tmp_path)
     manager.config["knowledge_bases"]["kb"]["type"] = "linked"

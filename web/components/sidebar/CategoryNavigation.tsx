@@ -179,7 +179,7 @@ export function CategoryTabs({
           <>
             {workspace.length > 0 && <span aria-hidden className="dt-category-divider" />}
             <div
-              className={`dt-account-tabs ${tucked ? 'is-tucked' : ''}`}
+              className={`dt-account-tabs ${tucked ? 'is-tucked-x' : ''}`}
               onPointerEnter={event => {
                 if (event.pointerType !== 'touch') setPeek(true)
               }}

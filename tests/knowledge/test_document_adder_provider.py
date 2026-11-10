@@ -10,8 +10,10 @@ import pytest
 from deeptutor.knowledge.add_documents import (
     DocumentAdder,
     RawDocumentRemoval,
+    RawFolderRemoval,
     add_documents,
     remove_raw_document,
+    remove_raw_folder,
 )
 
 
@@ -413,6 +415,63 @@ def test_remove_raw_document_uses_relative_key_for_nested_file(
     assert removal.rel_path == "papers/2024/a.pdf"
     remaining = json.loads((kb_dir / "metadata.json").read_text(encoding="utf-8"))
     assert remaining["file_hashes"] == {"other.pdf": "keep"}
+
+
+def test_remove_raw_folder_deletes_tree_and_hashes(tmp_path: Path) -> None:
+    kb_dir = tmp_path / "kb"
+    raw_dir = kb_dir / "raw"
+    papers = raw_dir / "papers" / "2024"
+    papers.mkdir(parents=True)
+    (papers / "a.pdf").write_text("a", encoding="utf-8")
+    (papers / "b.pdf").write_text("b", encoding="utf-8")
+    (raw_dir / "other.pdf").write_text("keep", encoding="utf-8")
+    (kb_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "file_hashes": {
+                    "papers/2024/a.pdf": "hash-a",
+                    "papers/2024/b.pdf": "hash-b",
+                    "other.pdf": "keep-hash",
+                },
+                "keep": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    removal = remove_raw_folder(kb_dir, raw_dir / "papers")
+
+    assert removal.removed_count == 2
+    assert removal.was_indexed is True
+    assert sorted(removal.rel_paths) == ["papers/2024/a.pdf", "papers/2024/b.pdf"]
+    assert not (raw_dir / "papers").exists()
+    assert (raw_dir / "other.pdf").exists()
+    remaining = json.loads((kb_dir / "metadata.json").read_text(encoding="utf-8"))
+    assert remaining["file_hashes"] == {"other.pdf": "keep-hash"}
+    assert remaining["keep"] is True
+
+
+def test_remove_raw_folder_reports_unindexed_folder(tmp_path: Path) -> None:
+    kb_dir = tmp_path / "kb"
+    nested = kb_dir / "raw" / "notes"
+    nested.mkdir(parents=True)
+    (nested / "note.md").write_text("x", encoding="utf-8")
+    # No metadata.json at all — nothing was indexed yet.
+
+    removal = remove_raw_folder(kb_dir, nested)
+
+    assert removal.removed_count == 1
+    assert removal.was_indexed is False
+    assert not nested.exists()
+
+
+def test_remove_raw_folder_missing_dir_raises(tmp_path: Path) -> None:
+    kb_dir = tmp_path / "kb"
+    raw_dir = kb_dir / "raw"
+    raw_dir.mkdir(parents=True)
+
+    with pytest.raises(FileNotFoundError):
+        remove_raw_folder(kb_dir, raw_dir / "does-not-exist")
 
 
 @pytest.mark.parametrize("storage", ["version-1", "rag_storage"])

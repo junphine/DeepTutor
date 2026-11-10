@@ -1988,9 +1988,17 @@ class KnowledgeBaseManager:
             str(folder).encode(), usedforsecurity=False
         ).hexdigest()[:8]
 
+        # The linked folder's own name (its last path segment) becomes a
+        # top-level organizational folder under <kb>/raw/, so synced files land
+        # in a clearly-scoped subtree instead of mingling at raw/'s root.
+        folder_name = folder.name or folder_id
+
         # Load existing linked folders from metadata
         kb_dir = self.base_dir / kb_name
         metadata_file = kb_dir / "metadata.json"
+        # Create the same-name folder up front so it shows in the KB's file
+        # browser immediately, even before the first sync runs.
+        (kb_dir / "raw" / folder_name).mkdir(parents=True, exist_ok=True)
         metadata: dict = {}
 
         if metadata_file.exists():
@@ -2016,6 +2024,7 @@ class KnowledgeBaseManager:
         folder_info = {
             "id": folder_id,
             "path": str(folder),
+            "folder_name": folder_name,
             "added_at": datetime.now().isoformat(),
             "file_count": len(files),
             "last_sync": None,

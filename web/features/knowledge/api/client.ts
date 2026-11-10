@@ -1433,6 +1433,29 @@ export async function deleteKbFile(
   return (await res.json()) as { was_indexed: boolean };
 }
 
+/**
+ * Delete a whole folder (and everything beneath it) from a KB's raw/ tree.
+ */
+export async function deleteKbFolder(
+  name: string,
+  folderPath: string,
+): Promise<{ removed_count: number; was_indexed: boolean }> {
+  const res = await apiFetch(
+    apiUrl(
+      `/api/knowledge-bases/${encodeURIComponent(name)}/folders/${folderPath
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}${inKnowledgeLibrary() ? "?resource_library=true" : ""}`,
+    ),
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, "Failed to delete folder"));
+  }
+  invalidateKnowledgeCaches();
+  return (await res.json()) as { removed_count: number; was_indexed: boolean };
+}
+
 export async function setDefaultKnowledgeBase(name: string): Promise<void> {
   const res = await apiFetch(
     apiUrl(`/api/knowledge-bases/default/${encodeURIComponent(name)}`),

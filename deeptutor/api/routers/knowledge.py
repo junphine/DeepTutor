@@ -46,6 +46,7 @@ from deeptutor.knowledge.add_documents import (
     DocumentAdder,
     hashes_for_indexed_files,
     remove_raw_document,
+    remove_raw_folder,
 )
 from deeptutor.knowledge.initializer import KnowledgeBaseInitializer
 from deeptutor.knowledge.kb_types import is_connected_kb, supports_local_raw_files
@@ -1150,9 +1151,11 @@ async def run_upload_processing_task(
         uploaded_file_paths: List of file paths to process
         rag_provider: RAG provider already matched against the KB binding
         folder_id: Optional folder ID for sync state update
-        folder_root: Linked folder's own root path, when these files came
+        folder_root: Root a caller is syncing from, when these files came
             from a folder sync. Preserves each file's path relative to it
-            instead of flattening to the bare filename.
+            instead of flattening to the bare filename. For a linked-folder
+            sync this is the folder's *parent*, so the folder's own name
+            becomes a top-level subfolder under raw/.
     """
     if owner is not None and get_current_user_or_none() != owner:
         token = set_current_user(owner)
@@ -2319,11 +2322,7 @@ async def connect_linked_folder_route(payload: ConnectFolderRequest):
     try:
         manager = get_kb_manager()
         entry = manager.register_linked_kb(
-            name,
-            str(folder),
-            result.provider,
-            stats=stats,
-            description=payload.description
+            name, str(folder), result.provider, stats=stats, description=payload.description
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -2436,7 +2435,7 @@ async def connect_lightrag_server_route(payload: ConnectLightRagServerRequest):
             result.base_url,
             api_key=api_key,
             search_mode=search_mode,
-            description=payload.description
+            description=payload.description,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -2506,7 +2505,7 @@ async def connect_weknora_route(payload: ConnectWeKnoraRequest):
             result.base_url,
             payload.api_key or "",
             result.knowledge_base_id,
-            description=payload.description
+            description=payload.description,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -3093,6 +3092,32 @@ def _resolve_raw_file_or_404(raw_dir: Path, filename: str) -> Path:
     return target
 
 
+def _resolve_raw_dir_or_404(raw_dir: Path, folder: str) -> Path:
+    """Resolve a raw KB subfolder within ``raw_dir`` for deletion.
+
+    Blocks traversal outside ``raw/`` and refuses the ``raw/`` root itself,
+    since deleting the root would remove every document in the KB.
+    """
+    folder = (folder or "").strip("/")
+    if not folder:
+        raise HTTPException(status_code=400, detail="Folder path is required")
+    if not raw_dir.exists():
+        raise HTTPException(status_code=404, detail="Folder not found")
+
+    raw_resolved = raw_dir.resolve()
+    target = (raw_dir / folder).resolve()
+    try:
+        target.relative_to(raw_resolved)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if target == raw_resolved:
+        raise HTTPException(status_code=400, detail="Cannot delete the knowledge base root")
+    if not target.exists() or not target.is_dir():
+        raise HTTPException(status_code=404, detail="Folder not found")
+
+    return target
+
+
 def _resolve_kb_raw_file_or_404(kb_name: str, filename: str) -> Path:
     """Resolve a raw KB file while preventing traversal outside raw/."""
     raw_dir = _resolve_kb_raw_dir(kb_name)
@@ -3350,6 +3375,44 @@ async def delete_kb_file(kb_name: str, filename: str):
     return {
         "status": "ok",
         "path": removal.rel_path,
+        "was_indexed": removal.was_indexed,
+    }
+
+
+@router.delete("/knowledge-bases/{kb_name}/folders/{folder_path:path}")
+async def delete_kb_folder(kb_name: str, folder_path: str):
+    """Remove a whole folder and everything beneath it from a knowledge base.
+
+    Deletes the folder, its files, and any nested subfolders. Like single-file
+    deletion this works while the KB is in an *error* state, and connected
+    (read-only) / legacy KBs are rejected. Vectors are not pruned here;
+    ``was_indexed`` tells the caller whether a re-index is needed to purge the
+    removed documents from retrieval.
+    """
+    manager, resolved_name, _ = _writable_kb(kb_name)
+    kb_entry = _load_kb_entry_or_404(manager, resolved_name)
+    _assert_kb_writable_or_409(resolved_name, kb_entry)
+
+    kb_dir = manager.get_knowledge_base_path(resolved_name)
+    raw_dir = kb_dir / "raw"
+    target = _resolve_raw_dir_or_404(raw_dir, folder_path)
+
+    provider = _validate_registered_provider(kb_entry.get("rag_provider") or DEFAULT_PROVIDER)
+    if provider in {PAGEINDEX_PROVIDER, PAGEINDEX_OSS_PROVIDER}:
+        from deeptutor.services.rag.factory import get_pipeline
+
+        pipeline = get_pipeline(provider, kb_base_dir=str(manager.base_dir))
+        for file_path in target.rglob("*"):
+            if file_path.is_file():
+                await pipeline.remove_document(resolved_name, file_path.name)
+
+    rel = target.relative_to(raw_dir).as_posix()
+    VisualAssetStore(kb_dir).remove_source_tree(rel)
+    removal = remove_raw_folder(Path(kb_dir), target)
+    return {
+        "status": "ok",
+        "path": rel,
+        "removed_count": removal.removed_count,
         "was_indexed": removal.was_indexed,
     }
 
@@ -4882,7 +4945,10 @@ async def sync_folder(kb_name: str, folder_id: str, background_tasks: Background
             task_id=task_id,
             rag_provider=kb_provider,
             folder_id=folder_id,  # Pass folder_id to update state on success
-            folder_root=folder_path,  # Preserve each file's path relative to this root
+            # Stage relative to the linked folder's *parent* so each synced
+            # file lands under a top-level folder named after the linked
+            # folder (the last path segment), preserving its inner structure.
+            folder_root=str(Path(folder_path).parent),
             owner=get_current_user(),
             storage_workspace_id=workspace_id_for_kb_base_dir(kb_base_dir),
         )

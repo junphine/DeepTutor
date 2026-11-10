@@ -10,6 +10,7 @@ from datetime import datetime
 import json
 import logging
 from pathlib import Path
+import shutil
 from typing import TYPE_CHECKING, List, Optional
 
 from deeptutor.knowledge.staging import content_hash, stage_source
@@ -89,6 +90,18 @@ class RawDocumentRemoval:
     was_indexed: bool
 
 
+@dataclass(frozen=True)
+class RawFolderRemoval:
+    """Outcome of removing a raw folder and everything beneath it."""
+
+    rel_paths: list[str]
+    was_indexed: bool
+
+    @property
+    def removed_count(self) -> int:
+        return len(self.rel_paths)
+
+
 def _read_metadata(metadata_file: Path) -> dict:
     """Load a KB's metadata.json, returning {} when absent or unreadable."""
     if not metadata_file.exists():
@@ -157,6 +170,41 @@ def remove_raw_document(kb_dir: Path, file_path: Path) -> RawDocumentRemoval:
         _write_metadata(metadata_file, metadata)
 
     return RawDocumentRemoval(rel_path=hash_key, was_indexed=was_indexed)
+
+
+def remove_raw_folder(kb_dir: Path, folder_path: Path) -> RawFolderRemoval:
+    """Delete a raw folder and everything beneath it, dropping hash records.
+
+    Mirrors :func:`remove_raw_document` (same decoupling from the index, same
+    "vectors are cleared by a later re-index" contract) but for a whole tree.
+    The metadata ``file_hashes`` entries for every removed file are dropped in
+    a single read/write so a later re-add or linked-folder re-sync detects the
+    files as new instead of silently skipping them.
+
+    ``folder_path`` must already be sandbox-resolved under the KB's raw/ dir
+    and must not be the ``raw/`` directory itself.
+    """
+    raw_dir = kb_dir / "raw"
+    folder = folder_path.resolve()
+    if not folder.is_dir():
+        raise FileNotFoundError(folder)
+
+    rel_paths = [_raw_hash_key(path, raw_dir) for path in folder.rglob("*") if path.is_file()]
+
+    metadata_file = kb_dir / "metadata.json"
+    metadata = _read_metadata(metadata_file)
+    hashes = metadata.get("file_hashes")
+    was_indexed = False
+    if isinstance(hashes, dict):
+        for key in rel_paths:
+            if key in hashes:
+                was_indexed = True
+                del hashes[key]
+        if rel_paths:
+            _write_metadata(metadata_file, metadata)
+
+    shutil.rmtree(folder)
+    return RawFolderRemoval(rel_paths=rel_paths, was_indexed=was_indexed)
 
 
 class DocumentAdder:

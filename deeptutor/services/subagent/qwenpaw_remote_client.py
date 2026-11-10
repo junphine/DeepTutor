@@ -217,10 +217,10 @@ class QwenPawRemoteClient:
             return ""
 
     def _post_chat(self,
-            messages: List[Dict],
-            workspace: str | Path | None = None,
-            session_id: str = None
-    ) -> Dict:
+                   messages: List[Dict],
+                   workspace: str | Path | None = None,
+                   session_id: str = None
+                   ) -> Dict:
         """
         发送完整的对话消息列表（每条消息含 role 与 content 块）并流式返回结果。
 
@@ -298,11 +298,11 @@ class QwenPawRemoteClient:
         return result
 
     def prompt(self,
-            content: List[Dict],
-            workspace: str | Path | None = None,
-            system_prompt: List[Dict] | None = None,
-            session_id: str = None
-    ) -> Dict:
+               content: List[Dict],
+               workspace: str | Path | None = None,
+               system_prompt: List[Dict] | None = None,
+               session_id: str = None
+               ) -> Dict:
         """
         基于内容生成输出
 
@@ -379,15 +379,15 @@ class QwenPawRemoteClient:
         print("=" * 70)
         map_instructions = (
             "你需要基于<question>的内容对<attachment>或者<document>的内容进行处理。\n"
-            "请先根据任务需求，判断这些内容是否包含任务的相关信息或者线索，如果存在以markword格式输出相关信息。\n"           
+            "请先根据任务需求，判断这些内容是否包含任务的相关信息或者线索，如果存在以markword格式输出相关信息。\n"
             "如果任务中提供了一个skill调用需求，则把输入附件或者文档作为skill的处理对象，输出skill处理的结果。\n"
         )
         system_conversation = [{"type": "text", "text": map_instructions + "\n<question>\n"},
-                         *prompt,
-                        {"type": "text", "text": "\n</question>"}]
+                               *prompt,
+                               {"type": "text", "text": "\n</question>"}]
 
         reduce_instructions = (
-            "请根据各个文件的摘要信息，回答用户的问题<question>。\n"           
+            "请根据各个文件的摘要信息，回答用户的问题<question>。\n"
             "如果任务中提供了一个skill调用需求，则后面的摘要信息已经是skill的处理结果。\n"
         )
         user_prompt = [{"type": "text", "text": reduce_instructions + "\n<question>\n"},
@@ -417,7 +417,7 @@ class QwenPawRemoteClient:
                     # 生成输出
                     result = self.ask_markdown(
                         prompt=system_conversation,
-                        workspace=str(absrel.parent),
+                        directory=str(absrel.parent),
                         system_prompt=system_prompt,
                         session_id=session_id
                     )
@@ -666,9 +666,9 @@ class QwenPawRemoteClient:
         min_level = min(h[0] for h in raw_headings)
         min_level_count = sum(1 for h in raw_headings if h[0] == min_level)
         title_only = (
-            min_level_count == 1
-            and raw_headings[0][0] == min_level
-            and len(raw_headings) > 1
+                min_level_count == 1
+                and raw_headings[0][0] == min_level
+                and len(raw_headings) > 1
         )
 
         if title_only:
@@ -861,42 +861,64 @@ class QwenPawRemoteClient:
         print(f"  文档无标题结构，退化为顺序切块（{len(chunks)} 块）")
 
         conversation = []
+        sub_conversation = []
         if system_prompt:
             conversation.append({"role": "system", "content": system_prompt})
 
-        user_promopt = "以下是一个超长文档，已按顺序切块。我会逐段发送给你（一次只发送一段）请逐段阅读，每次记录下和问题相关的信息，全部读完后我会请你汇总作答。"
+        round_system_promopt = "你是文档信息挖掘专家，用户将基于Map-Reduce思想将一个超长文档分隔成小段，逐段发送给你（一次只发送一段）。请参考文档大纲，从当前段落内容挖掘和用户问题<question>相关的信息，你不需要直接回答用户的问题，只需要记录当前段落存在的相关的线索和资料，直接给出挖掘的信息。后续用户会参考你的输出进行汇总。"
+
+        user_promopt = "以下是一个超长文档的大纲，以及各个段落基于当前问题的相关信息， 请你全部读完后汇总作答。"
 
         if outline_text:
-            user_promopt+='\n文档的大纲:\n<outline>\n'
-            user_promopt+=outline_text
-            user_promopt+='\n</outline>\n'
+            outline_text = f'\n文档的大纲:\n<outline>\n{outline_text}\n</outline>\n'
+            user_promopt += outline_text
 
-        user_promopt += "\n<question>\n"
+        sub_conversation.append({
+            "role": "system",
+            "content": [
+                {"type": "text", "text": round_system_promopt},
+                {"type": "text", "text": outline_text+"\n<question>\n"},
+                *question,
+                {"type": "text", "text": "\n</question>\n"},
+            ]
+        })
 
         conversation.append({
             "role": "user",
             "content": [
                 {"type": "text", "text": user_promopt},
-                *question,
-                {"type": "text", "text": "\n</question>\n"},
-            ],
+            ]
         })
 
         # 按轮次批量发送，每轮两两结合发送，减少请求次数
         rounds = []
         last_round = ''
+        cur_chars = 0
+        cur_blocks = []
+
         for i, (_label, text) in enumerate(chunks, 1):
-            cur_blocks = []
-            if last_round:
-                cur_blocks.append({"type": "text", "text": f"\n--- 文档上一段内容 ---\n"})
-                cur_blocks.append({"type": "text", "text": last_round})
             piece_blocks = self._parse_markdown_blocks(text, md_file.parent)
+            piece_chars = 0
+            for piece in piece_blocks:
+                if piece['type']=='image':
+                    piece_chars += 4096
+                if piece['type']=='text':
+                    piece_chars += len(piece['text'])
+            if cur_chars + piece_chars + len(last_round) > MAX_SECTION_CHARS_PER_ROUND*2 and cur_blocks:
+                if last_round:
+                    cur_blocks.insert(0,{"type": "text", "text": f"\n--- 文档上一段内容 ---\n{last_round}"})
+                rounds.append(cur_blocks)
+                cur_blocks = []
+                cur_chars = 0
+                last_round = text
             cur_blocks.append({"type": "text", "text": f"\n--- 文档第[{_label}]段 ---\n"})
             cur_blocks.extend(piece_blocks)
+            cur_chars += piece_chars
+        if cur_blocks:
+            if last_round:
+                cur_blocks.insert(0,{"type": "text", "text": f"\n--- 文档上一段内容 ---\n{last_round}"})
             rounds.append(cur_blocks)
-            last_round = text
 
-        sub_conversation = conversation.copy()
         result = None
         for ri, round_blocks in enumerate(rounds, 1):
             round_conversation = sub_conversation.copy()
@@ -911,7 +933,12 @@ class QwenPawRemoteClient:
         # 全部读取完毕后请求最终答案
         conversation.append({
             "role": "user",
-            "content": [{"type": "text", "text": "以上为从文档全文中提取出来的线索，请基于线索给出完整、准确的最终答案。"}],
+            "content": [
+                {"type": "text", "text": "以上为从文档全文中提取出来的线索，请基于线索给出完整、准确的最终答案。"},
+                {"type": "text", "text": "\n<question>\n"},
+                *question,
+                {"type": "text", "text": "\n</question>\n"},
+            ],
         })
         result = self._post_chat(conversation, workspace=str(md_file.parent), session_id=session_id)
         result["file"] = str(md_file)
@@ -1035,11 +1062,11 @@ class QwenPawRemoteClient:
         return final_result
 
     def ask_markdown(self,
-            prompt: List[Dict],
-            system_prompt: List[Dict],
-            directory: Path|str,
-            session_id: str = None
-    ) -> Dict:
+                     prompt: List[Dict],
+                     system_prompt: List[Dict],
+                     directory: Path|str,
+                     session_id: str = None
+                     ) -> Dict:
         """
         将 markdown 文件发送给多模态大模型，逐块发送：
         遇到文本发送 text 块，遇到图片发送 image 块。

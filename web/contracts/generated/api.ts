@@ -2257,6 +2257,32 @@ export interface paths {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/knowledge-bases/{kb_name}/folders/{folder_path}": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    readonly post?: never;
+    /**
+     * Delete Kb Folder
+     * @description Remove a whole folder and everything beneath it from a knowledge base.
+     *
+     *     Deletes the folder, its files, and any nested subfolders. Like single-file
+     *     deletion this works while the KB is in an *error* state, and connected
+     *     (read-only) / legacy KBs are rejected. Vectors are not pruned here;
+     *     ``was_indexed`` tells the caller whether a re-index is needed to purge the
+     *     removed documents from retrieval.
+     */
+    readonly delete: operations["delete_kb_folder_api_knowledge_bases__kb_name__folders__folder_path__delete"];
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
   readonly "/api/knowledge-bases/{kb_name}/github-source": {
     readonly parameters: {
       readonly query?: never;
@@ -12271,6 +12297,11 @@ export interface components {
     /** Body_create_knowledge_base_api_knowledge_bases_post */
     readonly Body_create_knowledge_base_api_knowledge_bases_post: {
       /**
+       * Description
+       * @default
+       */
+      readonly description: string;
+      /**
        * Embedding Model
        * @default
        */
@@ -13116,6 +13147,11 @@ export interface components {
     };
     /** ConnectFolderRequest */
     readonly ConnectFolderRequest: {
+      /**
+       * Description
+       * @default
+       */
+      readonly description: string;
       /** Folder Path */
       readonly folder_path: string;
       /** Name */
@@ -13159,6 +13195,11 @@ export interface components {
        * @default
        */
       readonly api_key: string;
+      /**
+       * Description
+       * @default
+       */
+      readonly description: string;
       /** Name */
       readonly name: string;
       /**
@@ -13193,6 +13234,11 @@ export interface components {
     };
     /** ConnectSubagentRequest */
     readonly ConnectSubagentRequest: {
+      /**
+       * Agent Id
+       * @default
+       */
+      readonly agent_id: string;
       /** Agent Kind */
       readonly agent_kind: string;
       /**
@@ -13200,6 +13246,11 @@ export interface components {
        * @default
        */
       readonly cwd: string;
+      /**
+       * Description
+       * @default
+       */
+      readonly description: string;
       /** Name */
       readonly name: string;
     };
@@ -13207,6 +13258,11 @@ export interface components {
     readonly ConnectWeKnoraRequest: {
       /** Api Key */
       readonly api_key: string;
+      /**
+       * Description
+       * @default
+       */
+      readonly description: string;
       /** Knowledge Base Id */
       readonly knowledge_base_id: string;
       /** Name */
@@ -24431,6 +24487,42 @@ export interface operations {
         readonly "application/json": components["schemas"]["CreateFolderPayload"];
       };
     };
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly delete_kb_folder_api_knowledge_bases__kb_name__folders__folder_path__delete: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path: {
+        readonly folder_path: string;
+        readonly kb_name: string;
+      };
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody?: never;
     readonly responses: {
       /** @description Successful Response */
       readonly 200: {

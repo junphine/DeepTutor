@@ -214,6 +214,28 @@ def test_verified_source_visual_contract_and_lifecycle(tmp_path: Path, suffix: s
     assert not persisted.exists()
 
 
+def test_remove_source_tree_drops_folder_descendants_only(tmp_path: Path) -> None:
+    kb_dir = tmp_path / "kb"
+    (kb_dir / "raw").mkdir(parents=True)
+    store = VisualAssetStore(kb_dir)
+    store.root.mkdir(parents=True, exist_ok=True)
+
+    def rec(asset_id: str, source_path: str) -> dict:
+        return {"asset_id": asset_id, "source_path": source_path, "mime_type": "image/png"}
+
+    assets = {
+        "a" * 64: rec("a" * 64, "root.pdf"),
+        "b" * 64: rec("b" * 64, "folder/one.pdf"),
+        "c" * 64: rec("c" * 64, "folder/sub/two.pdf"),
+        "d" * 64: rec("d" * 64, "other.pdf"),
+    }
+    store.manifest_path.write_text(json.dumps({"version": 1, "assets": assets}), encoding="utf-8")
+
+    store.remove_source_tree("folder")
+
+    assert set(store.records()) == {"a" * 64, "d" * 64}
+
+
 def test_large_existing_manifest_remains_readable_and_accepts_more_figures(tmp_path: Path):
     """#1802: a corpus beyond the old 16 MiB limit must retain every reference."""
     import deeptutor.services.rag.visual_assets as assets_module

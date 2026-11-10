@@ -3226,6 +3226,42 @@ def test_delete_kb_file_success_and_traversal(monkeypatch, tmp_path: Path) -> No
         assert not test_file.exists()
 
 
+def test_delete_kb_folder_removes_tree_and_guards_root(monkeypatch, tmp_path: Path) -> None:
+    manager = _real_manager(monkeypatch, tmp_path)
+    kb_dir = tmp_path / "kbs" / "chem"
+    raw_dir = kb_dir / "raw"
+    (raw_dir / "papers" / "2024").mkdir(parents=True)
+    (raw_dir / "papers" / "2024" / "a.pdf").write_text("a", encoding="utf-8")
+    (raw_dir / "papers" / "b.pdf").write_text("b", encoding="utf-8")
+    (raw_dir / "keep.pdf").write_text("keep", encoding="utf-8")
+    (kb_dir / "metadata.json").write_text(
+        json.dumps({"file_hashes": {"papers/2024/a.pdf": "hash-a", "papers/b.pdf": "hash-b"}}),
+        encoding="utf-8",
+    )
+    manager.config.setdefault("knowledge_bases", {})["chem"] = {
+        "rag_provider": "llamaindex",
+        "status": "ready",
+    }
+    manager._save_config()
+
+    with TestClient(_build_app()) as client:
+        # Missing folder
+        assert client.delete("/api/knowledge-bases/chem/folders/nope").status_code == 404
+        # The raw root itself must be refused (guards against wiping the KB).
+        assert client.delete("/api/knowledge-bases/chem/folders/").status_code in (400, 404)
+
+        res = client.delete("/api/knowledge-bases/chem/folders/papers")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["status"] == "ok"
+        assert body["path"] == "papers"
+        assert body["removed_count"] == 2
+        assert body["was_indexed"] is True
+
+    assert not (raw_dir / "papers").exists()
+    assert (raw_dir / "keep.pdf").exists()
+
+
 @pytest.mark.parametrize("first_upload_fails", [False, True])
 def test_create_empty_llamaindex_kb_then_upload_and_retry(
     monkeypatch, tmp_path, first_upload_fails

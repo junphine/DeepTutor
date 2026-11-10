@@ -143,8 +143,8 @@ def test_unlink_removes_only_the_source_registration(tmp_path: Path) -> None:
     kb_dir = manager.base_dir / "kb"
     raw_file = kb_dir / "raw" / "note.md"
     index_marker = kb_dir / "version-1" / "index.marker"
-    raw_file.parent.mkdir(parents=True)
-    index_marker.parent.mkdir(parents=True)
+    raw_file.parent.mkdir(parents=True, exist_ok=True)
+    index_marker.parent.mkdir(parents=True, exist_ok=True)
     raw_file.write_text("imported", encoding="utf-8")
     index_marker.write_text("index", encoding="utf-8")
 
@@ -153,3 +153,28 @@ def test_unlink_removes_only_the_source_registration(tmp_path: Path) -> None:
     assert manager.get_linked_folders("kb") == []
     assert raw_file.read_text(encoding="utf-8") == "imported"
     assert index_marker.read_text(encoding="utf-8") == "index"
+
+
+def test_link_folder_creates_same_name_raw_subfolder(tmp_path: Path) -> None:
+    manager, _metadata_file, _folder_id, _doc = _manager_with_linked_folder(tmp_path)
+
+    # Linking "notes" creates a same-name folder under <kb>/raw/ up front.
+    raw_subfolder = manager.base_dir / "kb" / "raw" / "notes"
+    assert raw_subfolder.is_dir()
+
+    # The registration records the folder name so syncs can target it.
+    folders = manager.get_linked_folders("kb")
+    assert folders[0]["folder_name"] == "notes"
+
+
+def test_link_folder_is_idempotent_and_still_ensures_subfolder(tmp_path: Path) -> None:
+    manager, _metadata_file, _folder_id, _doc = _manager_with_linked_folder(tmp_path)
+    raw_subfolder = manager.base_dir / "kb" / "raw" / "notes"
+    raw_subfolder.rmdir()  # Simulate the subfolder being removed before re-link.
+
+    again = manager.link_folder("kb", str(tmp_path / "notes"))
+
+    assert again["folder_name"] == "notes"
+    assert raw_subfolder.is_dir()
+    # Only one registration exists.
+    assert len(manager.get_linked_folders("kb")) == 1

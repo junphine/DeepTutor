@@ -281,7 +281,7 @@ export default function SimpleMarkdownRenderer({
         // apply only through RichCodeBlock when rich code rendering is enabled.
         return (
           <div
-            className={`md-code-block ${gap} overflow-hidden rounded-xl border border-[var(--border)] bg-[#1f2937]`}
+            className={`md-code-block ${gap} overflow-hidden rounded-xl border border-[var(--border)] bg-[#1f2937]/40`}
           >
             <pre className="overflow-x-auto p-4 text-sm leading-relaxed text-[#e5e7eb]">
               <code className="md-code-block__code" {...props}>

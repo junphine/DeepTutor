@@ -503,7 +503,7 @@ export default function RichMarkdownRenderer({
         // silently applying syntax theme, line-number, or wrapping preferences.
         return (
           <div
-            className={`md-code-block ${gap} overflow-hidden rounded-xl border border-[var(--border)] bg-[#1f2937]`}
+            className={`md-code-block ${gap} overflow-hidden rounded-xl border border-[var(--border)] bg-[#1f2937]/40`}
             {...lineProps}
           >
             <pre className="overflow-x-auto p-4 text-sm leading-relaxed text-[#e5e7eb]">

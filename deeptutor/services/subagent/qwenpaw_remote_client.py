@@ -7,19 +7,26 @@ from typing import List, Dict, Tuple
 import requests
 import json
 import uuid
-from datetime import datetime
+import time
+from collections import defaultdict
 
 # ---------------------------------------------------------------------------
 # 超长 Markdown 处理参数
 # ---------------------------------------------------------------------------
-# 文件超过该大小（字节）时，改用「大纲导航 + 按需读取」策略，避免一次性塞入上下文
-LARGE_MD_SIZE_THRESHOLD = 100_000
+# 文件超过该大小（字符）时，改用「大纲导航 + 按需读取」策略，避免一次性塞入上下文
+LARGE_MD_SIZE_THRESHOLD = 1_000_000
 # 单个章节内容超过该字符数时，进一步按段落切块
-MAX_SECTION_CHARS = 2_000
+MAX_SECTION_CHARS = 10_000
 # 单轮读取的章节内容字符预算（防止单次请求上下文过大）
-MAX_SECTION_CHARS_PER_ROUND = 10_000
+MAX_SECTION_CHARS_PER_ROUND = 100_000
 # 大纲导航最多迭代轮数（防止模型反复请求陷入死循环）
-MAX_OUTLINE_ROUNDS = 6
+MAX_OUTLINE_ROUNDS = 5
+
+# 聊天请求超时时间（秒）：24 小时
+CHAT_TIMEOUT_SECONDS = 24 * 60 * 60
+
+# 1024×1024 的图片约消耗 1,369 token；1920×1080 约 2,769 token
+VL_TOKENS_PER_IMAGE = 1369
 
 # 匹配 Markdown 标题行：`# 标题` ~ `###### 标题`
 _HEADING_RE = re.compile(r'^(#{1,6})\s+(.+?)\s*#*\s*$')
@@ -101,6 +108,7 @@ class QwenPawRemoteClient:
         self.file_extensions = set(file_extensions)
         self.file_extensions = self.file_extensions.union(text_mime_mapping.keys())
         self.file_extensions = self.file_extensions.union(image_mime_mapping.keys())
+        self._session_files = defaultdict(dict) # 保存session下已经发送过的文件
 
         # 自动登录
         if not self.auth_token and username and password:
@@ -258,7 +266,7 @@ class QwenPawRemoteClient:
         }
 
         try:
-            with requests.post(self.api_url, headers=headers, json=data, timeout=600) as response:
+            with requests.post(self.api_url, headers=headers, json=data, timeout=CHAT_TIMEOUT_SECONDS) as response:
                 if response.status_code != 200:
                     result["error"] = f"HTTP {response.status_code}: {response.text}"
                     return result
@@ -289,7 +297,7 @@ class QwenPawRemoteClient:
             result["success"] = result["error"] is None
 
         except requests.exceptions.Timeout:
-            result["error"] = "请求超时（600 秒）"
+            result["error"] = "请求超时（24 小时）"
             print(f"\n x 请求超时")
         except Exception as e:
             result["error"] = str(e)
@@ -324,19 +332,19 @@ class QwenPawRemoteClient:
     def process_directory(
             self,
             prompt: List[Dict],
-            directory: Path|str,
+            directory: List[str]|str,
             output_dir: str = None,
             recursive: bool = True,
             only_path: bool = False,
             system_prompt: List[Dict] | None = None,
-            session_id: str = None
+            session_id: str = None,
     ) -> Dict:
         """
-        Map Reduce处理整个目录下的文件,生成output结果，然后基于用户问题进行汇总
+        Map Reduce处理整个目录下的文件,每个文件生成一个output结果，然后基于用户问题进行汇总
 
         Args:
             prompt: 用户提示词
-            directory: 输入目录，等同于workspace
+            directory: 输入目录，等同于workspace,如果directory是list则必须为文件
             output_dir: 输出目录，保存中间结果
             recursive: 是否递归扫描子目录
             only_path: 是否只发送文件路径给agent的skill（如果skill支持文件路径作为输入），否则发送文件内容到agent
@@ -344,21 +352,28 @@ class QwenPawRemoteClient:
         Returns:
             Dict: 处理结果统计
         """
-        root = directory if isinstance(directory,Path) else Path(directory)
         # 扫描文件
-        try:
-            files = self.scan_files(root, recursive)
+        root = None
+        if isinstance(directory,str) or isinstance(directory,Path):
+            root = directory if isinstance(directory,Path) else Path(directory)
+            try:
+                files = self.scan_files(root, recursive)
+                if not files:
+                    print("x 未找到任何文件")
+                    return {"success": False, "error": "未找到文件"}
+
+                print(f"找到 {len(files)} 个文件:\n")
+                for i, file_path in enumerate(files, 1):
+                    print(f"  {i}. {str(file_path)}")
+
+            except Exception as e:
+                print(f"x 扫描失败：{e}")
+                return {"success": False, "error": str(e)}
+        elif isinstance(directory,list):
+            files = [Path(file) for file in directory]
             if not files:
-                print("x 未找到任何文件")
                 return {"success": False, "error": "未找到文件"}
-
-            print(f"找到 {len(files)} 个文件:\n")
-            for i, file_path in enumerate(files, 1):
-                print(f"  {i}. {str(file_path)}")
-
-        except Exception as e:
-            print(f"x 扫描失败：{e}")
-            return {"success": False, "error": str(e)}
+            root = files[0].parent
 
         # 创建输出目录
         if output_dir:
@@ -377,22 +392,26 @@ class QwenPawRemoteClient:
         print("\n" + "=" * 70)
         print("模式：为每个文件单独生成输出")
         print("=" * 70)
+        for user_msg in prompt:
+            if 'text' in user_msg:
+                user_msg['text'] = '<question>'+user_msg['text']+'</question>\n'
+
         map_instructions = (
-            "你需要基于<question>的内容对<attachment>或者<document>的内容进行处理。\n"
-            "请先根据任务需求，判断这些内容是否包含任务的相关信息或者线索，如果存在以markword格式输出相关信息。\n"
-            "如果任务中提供了一个skill调用需求，则把输入附件或者文档作为skill的处理对象，输出skill处理的结果。\n"
+            "你需要基于<question>的指令对<attachment>或者<document>的内容进行处理。\n"
+            "请先根据任务需求，判断这些内容是否包含任务的相关信息或者线索，如果存在以markword或者json格式输出相关信息。\n"
+            "如果任务中提供了一个skill调用需求（形如:/skill_name），则把输入附件或者文档作为skill的处理对象，输出skill处理的结果。\n"
         )
-        system_conversation = [{"type": "text", "text": map_instructions + "\n<question>\n"},
+        system_conversation = [{"type": "text", "text": map_instructions},
                                *prompt,
-                               {"type": "text", "text": "\n</question>"}]
+                               ]
 
         reduce_instructions = (
             "请根据各个文件的摘要信息，回答用户的问题<question>。\n"
-            "如果任务中提供了一个skill调用需求，则后面的摘要信息已经是skill的处理结果。\n"
+            "如果任务中提供了一个skill调用需求（形如:/skill_name），则后面的摘要信息已经是skill的处理结果。\n"
         )
-        user_prompt = [{"type": "text", "text": reduce_instructions + "\n<question>\n"},
+        user_prompt = [{"type": "text", "text": reduce_instructions},
                        *prompt,
-                       {"type": "text", "text": "\n</question>"}]
+                       ]
         prompt = []
         total_content = 0
         skip_images = False
@@ -400,6 +419,7 @@ class QwenPawRemoteClient:
         for i, file_path in enumerate(files, 1):
             print(f"\n[{i}/{total_file}] 处理：{file_path.name}")
             print("-" * 70)
+            result = None
             absrel = file_path.relative_to(root)
             if absrel.parent == root:
                 skip_images = False
@@ -410,20 +430,20 @@ class QwenPawRemoteClient:
                 prompt.append({"type":"text","text":content})
                 continue
             else:
-                # 读取文件
+                # 读取文md件，会包含其子文件下的图像
                 if file_path.suffix.lower() in (".md", ".markdown"):
                     print(f"  开始生成输出...")
                     last_prompt = prompt
                     # 生成输出
                     result = self.ask_markdown(
                         prompt=system_conversation,
-                        directory=str(absrel.parent),
+                        directory=file_path,
                         system_prompt=system_prompt,
-                        session_id=session_id
+                        session_id=session_id+'-'+str(i)
                     )
                     prompt = last_prompt
                     skip_images = True
-
+                # 读取数据，代码文件
                 elif is_text:
                     content = self.read_file(file_path)
                     if not content:
@@ -435,51 +455,42 @@ class QwenPawRemoteClient:
                             "success": False
                         })
                         continue
+
+                    prompt = []
                     prompt.append({"type":"text","text": f"\n<document filename=\"{file_path.name}>\"\n"})
                     prompt.append({"type":"text","text": content})
-                    prompt.append({"type":"text","text":"\n</document>\n<question>\n"})
+                    prompt.append({"type":"text","text":"\n</document>\n"})
+
+                    # 生成输出
+                    result = self.prompt(
+                        content=prompt,
+                        workspace=str(root),
+                        system_prompt=system_conversation,
+                        session_id=session_id+'-'+str(i)
+                    )
                     total_content+=len(content)
-                    if total_content>=MAX_SECTION_CHARS_PER_ROUND//2:
-                        # 生成输出
-                        result = self.prompt(
-                            content=prompt,
-                            workspace=str(directory),
-                            system_prompt=system_conversation,
-                            session_id=session_id
-                        )
-                        prompt = []
-                        total_content = 0
-                    else:
-                        continue
 
                 elif not skip_images and is_image:
                     image_data = file_path.read_bytes()
                     mime = guess_image_mime(file_path)
                     b64 = base64.b64encode(image_data).decode("utf-8")
+
+                    # 生成多模态文件的输出
+                    prompt = []
                     prompt.append({"type": "image", "image_url": f"data:{mime};base64,{b64}"})
-                    total_content+=4096
-                    if total_content>=MAX_SECTION_CHARS_PER_ROUND//2:
-                        # 生成输出
-                        result = self.prompt(
-                            content=prompt,
-                            workspace=str(directory),
-                            system_prompt=system_conversation,
-                            session_id=session_id
-                        )
-                        prompt = []
-                        total_content = 0
-                    else:
-                        continue
+                    total_content += VL_TOKENS_PER_IMAGE
+
+                    result = self.prompt(
+                        content=prompt,
+                        workspace=str(root),
+                        system_prompt=system_conversation,
+                        session_id=session_id+'-'+str(i)
+                    )
                 else:
                     continue
 
-            if i==total_file-1 and len(prompt)>0:
-                result = self.prompt(
-                    content=prompt,
-                    workspace=str(directory),
-                    system_prompt=system_conversation,
-                    session_id=session_id
-                )
+            if result is None:
+                continue
 
             if result["success"]:
                 stats["success_count"] += 1
@@ -542,7 +553,7 @@ class QwenPawRemoteClient:
 
         final_result = self.prompt(
             content=user_prompt,
-            workspace=str(directory),
+            workspace=str(root),
             system_prompt=system_prompt,
             session_id=session_id
         )
@@ -586,6 +597,10 @@ class QwenPawRemoteClient:
         将 markdown 内容解析为有序的块列表：
         文本内容 -> text 块，图片引用 -> image 块
 
+        支持两种图片引用形式：
+        - Markdown 语法：![alt](path) 或 ![alt](path "title")
+        - HTML 标签：<img src="path"/> 或 <img src='path' .../>
+
         Args:
             markdown_content: markdown 文本内容
             base_dir: markdown 文件所在目录，用于解析图片相对路径
@@ -595,27 +610,37 @@ class QwenPawRemoteClient:
         """
         blocks: List[Dict] = []
         # 匹配 markdown 图片引用：![alt](path) 或 ![alt](path "title")
-        image_pattern = re.compile(
+        md_image_pattern = re.compile(
             r'!\[([^\]]*)\]\(([^)\s]+)(?:\s+["\'][^"\']*["\'])?\)'
         )
+        # 匹配 HTML 图片标签：<img ... src="..." .../>（src 可为单/双引号）
+        html_image_pattern = re.compile(
+            r'<img\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|\'([^\']*)\')[^>]*?/?>'
+        )
+
+        # 收集两类图片匹配，按出现顺序统一处理
+        matches = []
+        for m in md_image_pattern.finditer(markdown_content):
+            matches.append((m.start(), m.end(), m.group(1), m.group(2)))
+        for m in html_image_pattern.finditer(markdown_content):
+            matches.append((m.start(), m.end(), "", m.group(1) or m.group(2)))
+        matches.sort(key=lambda x: x[0])
 
         last_end = 0
-        for match in image_pattern.finditer(markdown_content):
+        for start, end, alt, image_ref in matches:
             # 图片引用之前的文本
-            text = markdown_content[last_end:match.start()]
+            text = markdown_content[last_end:start]
             if text.strip():
                 blocks.append({"type": "text", "text": text})
 
-            alt = match.group(1)
-            image_ref = match.group(2)
             image_block = self._build_image_block(image_ref, base_dir)
             if image_block:
                 blocks.append(image_block)
             else:
                 # 图片加载失败，回退为文本提示
-                blocks.append({"type": "text", "text": f"[图片无法加载: {alt or image_ref}]"})
+                blocks.append({"type": "text", "text": f"![图片{alt}]({image_ref})"})
 
-            last_end = match.end()
+            last_end = end
 
         # 末尾剩余的文本
         tail = markdown_content[last_end:]
@@ -865,7 +890,7 @@ class QwenPawRemoteClient:
         if system_prompt:
             conversation.append({"role": "system", "content": system_prompt})
 
-        round_system_promopt = "你是文档信息挖掘专家，用户将基于Map-Reduce思想将一个超长文档分隔成小段，逐段发送给你（一次只发送一段）。请参考文档大纲，从当前段落内容挖掘和用户问题<question>相关的信息，你不需要直接回答用户的问题，只需要记录当前段落存在的相关的线索和资料，直接给出挖掘的信息。后续用户会参考你的输出进行汇总。"
+        round_system_promopt = "你是文档信息挖掘专家，用户将基于Map-Reduce思想将一个超长文档分隔成小段，逐段发送给你（一次只发送一段）。请参考文档大纲，从当前段落内容挖掘和用户问题<question>相关的信息，你不需要直接回答用户的问题，只需要记录当前段落存在的相关的线索和资料，直接并简洁的给出挖掘的信息，但是不能漏掉关键信息，不需要说明分析依据。后续用户会参考你的输出进行汇总。"
 
         user_promopt = "以下是一个超长文档的大纲，以及各个段落基于当前问题的相关信息， 请你全部读完后汇总作答。"
 
@@ -877,9 +902,8 @@ class QwenPawRemoteClient:
             "role": "system",
             "content": [
                 {"type": "text", "text": round_system_promopt},
-                {"type": "text", "text": outline_text+"\n<question>\n"},
-                *question,
-                {"type": "text", "text": "\n</question>\n"},
+                {"type": "text", "text": outline_text},
+                *question
             ]
         })
 
@@ -901,10 +925,10 @@ class QwenPawRemoteClient:
             piece_chars = 0
             for piece in piece_blocks:
                 if piece['type']=='image':
-                    piece_chars += 4096
+                    piece_chars += VL_TOKENS_PER_IMAGE
                 if piece['type']=='text':
                     piece_chars += len(piece['text'])
-            if cur_chars + piece_chars + len(last_round) > MAX_SECTION_CHARS_PER_ROUND*2 and cur_blocks:
+            if cur_chars + piece_chars + len(last_round) > MAX_SECTION_CHARS_PER_ROUND and cur_blocks:
                 if last_round:
                     cur_blocks.insert(0,{"type": "text", "text": f"\n--- 文档上一段内容 ---\n{last_round}"})
                 rounds.append(cur_blocks)
@@ -923,7 +947,7 @@ class QwenPawRemoteClient:
         for ri, round_blocks in enumerate(rounds, 1):
             round_conversation = sub_conversation.copy()
             round_conversation.append({"role": "user", "content": round_blocks})
-            result = self._post_chat(round_conversation, workspace=str(md_file.parent), session_id=session_id)
+            result = self._post_chat(round_conversation, workspace=str(md_file.parent), session_id=session_id+'-'+str(ri))
             if not result["success"]:
                 result["file"] = str(md_file)
                 continue
@@ -935,9 +959,7 @@ class QwenPawRemoteClient:
             "role": "user",
             "content": [
                 {"type": "text", "text": "以上为从文档全文中提取出来的线索，请基于线索给出完整、准确的最终答案。"},
-                {"type": "text", "text": "\n<question>\n"},
                 *question,
-                {"type": "text", "text": "\n</question>\n"},
             ],
         })
         result = self._post_chat(conversation, workspace=str(md_file.parent), session_id=session_id)
@@ -994,9 +1016,8 @@ class QwenPawRemoteClient:
         conversation.append({
             "role": "user",
             "content": [
-                {"type": "text", "text": instructions + "\n<question>\n"},
-                *question,
-                {"type": "text", "text": "\n</question>"},
+                {"type": "text", "text": instructions},
+                *question
             ],
         })
 
@@ -1006,7 +1027,7 @@ class QwenPawRemoteClient:
 
         for round_no in range(1, MAX_OUTLINE_ROUNDS + 1):
             print(f"  [大纲导航] 第 {round_no}/{MAX_OUTLINE_ROUNDS} 轮")
-            result = self._post_chat(conversation, workspace=str(md_file.parent), session_id=session_id)
+            result = self._post_chat(conversation, workspace=str(md_file.parent), session_id=session_id+'-'+str(round_no))
             if not result["success"]:
                 result["file"] = str(md_file)
                 return result
@@ -1101,6 +1122,35 @@ class QwenPawRemoteClient:
             print("x 未找到任何 markdown 文件")
             return {"success": False, "error": "未找到 markdown 文件"}
 
+        for user_msg in prompt:
+            if 'text' in user_msg:
+                user_msg['text'] = '<question>'+user_msg['text']+'</question>\n'
+
+        has_send_file = self._session_files[session_id].get(str(directory))
+        now = time.time()
+        if not has_send_file:
+            self._session_files[session_id][str(directory)] = now
+            if len(self._session_files)>10: # 清理session
+                clear_sessions = []
+                for sid,files in self._session_files.items():
+                    for dir in list(files.keys()):
+                        if files[dir] < now-2*3600: # 最多2个小时
+                            del files[dir]
+                    if len(files)==0:
+                        clear_sessions.append(sid)
+                for sid in clear_sessions:
+                    del self._session_files[sid]
+
+        else:
+            self._session_files[session_id][str(directory)] = now
+
+            result = self.prompt(
+                content=prompt,
+                workspace=str(directory),
+                session_id=session_id
+            )
+            return result
+
         results: List[Dict] = []
         last_result: Dict | None = None
 
@@ -1124,6 +1174,7 @@ class QwenPawRemoteClient:
 
             # 超长 Markdown（> 1MB）：改用「大纲导航 + 按需读取」，避免一次性塞入上下文
             markdown_content = markdown_content.replace('\r\n','\n')
+            markdown_content = self._strip_references_section(markdown_content)
             content_size = len(markdown_content)
             if content_size > LARGE_MD_SIZE_THRESHOLD:
                 result = self._ask_large_markdown(markdown_content, md_file, prompt, system_prompt, session_id)
@@ -1149,13 +1200,13 @@ class QwenPawRemoteClient:
             msg = []
             msg.append({"type":"text","text": f"\n<document filename=\"{md_file.name}>\"\n"})
             msg.extend(blocks)
-            msg.append({"type":"text","text":"\n</document>\n<question>\n"})
+            msg.append({"type":"text","text":"\n</document>\n"})
             msg.extend(prompt)
-            msg.append({"type":"text","text":"\n</question>\n"})
+
             # 发送给多模态大模型
             result = self.prompt(
                 content=msg,
-                workspace=str(md_file.parent),
+                workspace=str(directory),
                 system_prompt=system_prompt,
                 session_id=session_id
             )
@@ -1188,3 +1239,69 @@ class QwenPawRemoteClient:
             "content": results,
             "error": None if failed_count == 0 else f"{failed_count} 个文件发送失败"
         }
+
+    def _strip_references_section(self, markdown_text: str) -> str:
+        """
+        Remove the REFERENCES / BIBLIOGRAPHY section from a markdown document.
+
+        Deletes everything from the references heading up to the next heading
+        of the same or higher level (or the end of the document), so sections
+        that follow (e.g. acknowledgments) are preserved.
+
+        Args:
+            markdown_text (str): Markdown text generated by Docling.
+
+        Returns:
+            str: Markdown text without the references section.
+        """
+        if not markdown_text:
+            return markdown_text
+
+        heading_pattern = re.compile(r"^(#{1,6})\s+(.*)$")
+        # Matches e.g. "Reference", "References", "5. References",
+        # "■ REFERENCES", "REFERENCES AND NOTES", "参考文献"
+        references_pattern = re.compile(
+            r"^[^A-Za-z一-鿿]*"  # optional numbering / decoration (e.g. "5.", "■")
+            r"(references?|bibliography|literature cited|appendix|参考文献|附录|引用)"
+            r"(\s+and\s+notes)?"
+            r"[^A-Za-z一-鿿]*$",  # optional trailing decoration
+            re.IGNORECASE,
+        )
+
+        lines = markdown_text.split("\n")
+
+        # Locate the references heading (ignore lines inside fenced code blocks)
+        start_idx = None
+        start_level = 0
+        in_code_block = False
+
+        for i, line in enumerate(lines):
+            if line.strip().startswith("```"):
+                in_code_block = not in_code_block
+                continue
+            if in_code_block:
+                continue
+            match = heading_pattern.match(line.strip())
+            if match and references_pattern.match(match.group(2).strip()):
+                start_idx = i
+                start_level = len(match.group(1))
+                break
+
+        if start_idx is None:
+            return markdown_text
+
+        # Find the end of the section: the next heading of the same or higher level
+        end_idx = len(lines)
+        in_code_block = False
+        for i in range(start_idx + 1, len(lines)):
+            if lines[i].strip().startswith("```"):
+                in_code_block = not in_code_block
+                continue
+            if in_code_block:
+                continue
+            match = heading_pattern.match(lines[i].strip())
+            if match and len(match.group(1)) <= start_level:
+                end_idx = i
+                break
+
+        return "\n".join(lines[:start_idx] + lines[end_idx:]).strip()

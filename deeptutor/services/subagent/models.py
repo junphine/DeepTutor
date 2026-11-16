@@ -409,8 +409,17 @@ async def _qwenpaw_acp_options() -> BackendOptions:
     )
 
 async def _qwenpaw_remote_options() -> BackendOptions:
-    return await _free_text_options(
-        "qwenpaw_remote", "QwenPaw Agent (remote)", _QWENPAW_HARNESS_EFFORTS
+    backend = get_backend("qwenpaw_remote")
+    detected = await backend.detect() if backend else None
+    return BackendOptions(
+        kind="qwenpaw_remote",
+        display_name="QwenPaw Agent (remote)",
+        available=detected.available if detected else False,
+        version=detected.version if detected else "",
+        models=[],
+        efforts=list(_QWENPAW_HARNESS_EFFORTS),
+        allow_custom_model=True,
+        detail=detected.detail if detected else "incompatible",
     )
 
 # One provider per backend kind — the discovery order is the settings order.
@@ -426,8 +435,8 @@ _PROVIDERS: dict[str, Callable[..., Awaitable[BackendOptions]]] = {
     "hermes_remote": _hermes_remote_options,
     "openclaw": _openclaw_options,
     "deepseek_harness": _deepseek_harness_options,
-    "qwenpaw_acp": _qwenpaw_acp_options,
     "qwenpaw_remote": _qwenpaw_remote_options,
+    "qwenpaw_acp": _qwenpaw_acp_options,
 }
 
 

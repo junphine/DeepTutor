@@ -12,7 +12,7 @@ import uuid
 from typing import Any
 
 from deeptutor.services.subagent.base import OnEvent, SubagentBackend
-from deeptutor.services.subagent.config import BackendConfig
+from deeptutor.services.subagent.config import BackendConfig, load_subagent_settings
 from deeptutor.services.subagent.types import (
     EVENT_ERROR,
     EVENT_LOG,
@@ -45,13 +45,15 @@ class QwenPawRemoteBackend(SubagentBackend):
     JSON object sent/received on a separate line
 
     """
-
     kind = "qwenpaw_remote"
     display_name = "QwenPaw Remote"
     cli_command = "qwenpaw"
+    local_cli = False
+    detectable = True
 
     async def detect(self) -> DetectResult:
-        sdk, server_version = _qwenpaw_available()
+        config: BackendConfig = load_subagent_settings().backend(self.kind)
+        sdk, server_version = _qwenpaw_available(config)
         detail = ""
         if not sdk:
             detail += "QwenPaw Server not start. "
@@ -87,7 +89,7 @@ class QwenPawRemoteBackend(SubagentBackend):
         prompt_msgs =[{"type":"text","text":question}]
         system_prompt = []
         if config.system_prompt.strip() and not session_id:
-            system_prompt = [{"type":"text","text":config.system_prompt.strip()}]
+            system_prompt = [{"type":"text","text":config.system_prompt}]
 
         if images:
             prompt = "\n\nAttached local files:\n" + "\n".join(f"- {path}" for path in images)
@@ -160,7 +162,6 @@ class QwenPawRemoteBackend(SubagentBackend):
         return result
 
 
-
     def _build_cli_question_command(
         self, question: str, *, cwd: str, agent_id: str, config: BackendConfig, images: list[str] | None = None
     ) -> list[str]:
@@ -187,14 +188,15 @@ class QwenPawRemoteBackend(SubagentBackend):
         return env
 
 
-def _qwenpaw_available() -> bool:
+def _qwenpaw_available(config: BackendConfig) -> bool:
     """Check if the qwenpaw Python package is installed."""
     try:
-        qwenpaw_client = QwenPawRemoteClient()
+
+        qwenpaw_client = QwenPawRemoteClient(config.base_url)
         status,text = qwenpaw_client.version()
         return status==200,text
-    except (ImportError, ValueError):
-        return False,''
+    except Exception as err:
+        return False,str(err)
 
 
 __all__ = ["QwenPawRemoteBackend"]

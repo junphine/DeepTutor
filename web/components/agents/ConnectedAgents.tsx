@@ -19,8 +19,6 @@ import {
 
 /** Live local and remote agents, separate from imported histories. */
 
-const REMOTE_HERMES_KIND = "hermes_remote";
-
 type Lang = { zh: string; en: string };
 
 const backendLabel = agentKindLabel;
@@ -212,8 +210,8 @@ function ConnectModal({
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const isRemote = kind === REMOTE_HERMES_KIND;
-  const isCoding = kind.toLowerCase().indexOf("code")>=0;
+  const isRemote = kind.toLowerCase().indexOf("_remote")>0;
+  const isCoding = kind.toLowerCase().indexOf("code")>0;
 
   const submit = useCallback(async () => {
     const trimmed = name.trim();

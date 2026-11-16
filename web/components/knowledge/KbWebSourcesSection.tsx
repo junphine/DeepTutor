@@ -246,7 +246,7 @@ export default function KbWebSourcesSection({
             </span>
             <input
               type="number"
-              min={1}
+              min={0}
               max={5}
               value={maxDepth}
               onChange={(e) => setMaxDepth(Number(e.target.value) || 3)}

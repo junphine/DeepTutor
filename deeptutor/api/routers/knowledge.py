@@ -2744,6 +2744,56 @@ async def search_kiwix_articles(
     }
 
 
+class KnowledgeBaseSearchRequest(BaseModel):
+    """Request body for the knowledge-base RAG search open API."""
+
+    query: str = Field(min_length=1, max_length=5000)
+    top_k: int | None = Field(default=None, ge=1, le=100)
+    rewrite: bool | None = None
+    document_keys: list[str] | None = None
+
+
+@router.post("/knowledge-bases/{kb_name}/search")
+async def search_knowledge_base(
+    kb_name: str,
+    payload: KnowledgeBaseSearchRequest,
+) -> dict[str, Any]:
+    """Run a RAG query against a knowledge base.
+
+    Open API mirroring :func:`deeptutor.tools.rag_tool.rag_search`. The KB is
+    resolved through the current user's visibility rules (so ``AccessError``
+    for a missing or unassigned KB surfaces as 403/404 via the global handler),
+    then the query is delegated to the KB's bound retrieval pipeline. Returns
+    the standard RAG envelope (``query``, ``answer``, ``content``, ``sources``,
+    ``provider``) plus any pipeline extras (``query_rewrite``, ``warning``,
+    ``error_type``, ``needs_reindex``).
+    """
+    from deeptutor.tools.rag_tool import rag_search
+
+    query = (payload.query or "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="RAG query must be a non-empty string.")
+
+    kwargs: dict[str, Any] = {}
+    if payload.top_k is not None:
+        kwargs["top_k"] = payload.top_k
+    if payload.rewrite is not None:
+        kwargs["rewrite"] = payload.rewrite
+    if payload.document_keys is not None:
+        kwargs["document_keys"] = payload.document_keys
+
+    try:
+        return await rag_search(
+            query,
+            kb_name,
+            **kwargs,
+        )
+    except ValueError as exc:
+        # rag_search raises ValueError when the KB is not accessible (or the
+        # query is empty, which we already rejected above).
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.post("/knowledge-bases/probe-ima")
 async def probe_ima_route(payload: ProbeImaRequest):
     """Test-connect to a Tencent IMA knowledge base before binding a KB to it.

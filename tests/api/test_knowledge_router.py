@@ -759,6 +759,69 @@ def test_graphrag_model_compatibility_hides_unexpected_provider_details(
     assert "sk-secret" not in response.text
 
 
+def test_search_knowledge_base_delegates_to_rag_search(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    async def fake_rag_search(query: str, kb_name: str, **kwargs) -> dict:
+        calls.append({"query": query, "kb_name": kb_name, **kwargs})
+        return {
+            "query": query,
+            "answer": "grounded answer",
+            "content": "grounded answer",
+            "sources": [{"title": "doc.txt", "content": "passage"}],
+        }
+
+    monkeypatch.setattr("deeptutor.tools.rag_tool.rag_search", fake_rag_search)
+
+    with TestClient(_build_app()) as client:
+        response = client.post(
+            "/api/knowledge-bases/my-kb/search",
+            json={
+                "query": "What is a LUT?",
+                "top_k": 5,
+                "rewrite": False,
+                "document_keys": ["a.pdf", "b.pdf"],
+            },
+        )
+
+    assert response.status_code == 200
+    assert calls == [
+        {
+            "query": "What is a LUT?",
+            "kb_name": "my-kb",
+            "top_k": 5,
+            "rewrite": False,
+            "document_keys": ["a.pdf", "b.pdf"],
+        }
+    ]
+
+
+def test_search_knowledge_base_rejects_blank_query(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "deeptutor.tools.rag_tool.rag_search",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
+
+    with TestClient(_build_app()) as client:
+        response = client.post("/api/knowledge-bases/my-kb/search", json={"query": "   "})
+
+    assert response.status_code == 400
+    assert "non-empty" in response.json()["detail"]
+
+
+def test_search_knowledge_base_maps_inaccessible_kb_to_404(monkeypatch) -> None:
+    async def fake_rag_search(_query: str, _kb_name: str, **_kwargs) -> dict:
+        raise ValueError("Knowledge base 'missing' is not accessible.")
+
+    monkeypatch.setattr("deeptutor.tools.rag_tool.rag_search", fake_rag_search)
+
+    with TestClient(_build_app()) as client:
+        response = client.post("/api/knowledge-bases/missing/search", json={"query": "hi"})
+
+    assert response.status_code == 404
+    assert "missing" in response.json()["detail"]
+
+
 def test_create_kb_does_not_require_llm_precheck(monkeypatch, tmp_path: Path) -> None:
     manager = _FakeKBManager(tmp_path / "knowledge_bases")
     monkeypatch.setattr(knowledge_router_module, "get_kb_manager", lambda: manager)

@@ -2129,12 +2129,15 @@ async def get_kb_config(kb_name: str):
 async def update_kb_config(kb_name: str, config: dict):
     """Update configuration for a specific knowledge base."""
     try:
-        from deeptutor.services.config import get_kb_config_service
+        from deeptutor.services.config.knowledge_base_config import KnowledgeBaseConfigService
         from deeptutor.services.rag.index_probe import has_ready_provider_index
 
         config = dict(config or {})
-        service = get_kb_config_service()
-        current_config = service.get_kb_config(kb_name)
+        # Resolve the KB to its actual storage workspace (not the request's
+        # scope, which the resource-library flag scopes to the account library).
+        _, resolved_name, kb_base_dir = _writable_kb(kb_name)
+        service = KnowledgeBaseConfigService.get_instance(kb_base_dir / "kb_config.json")
+        current_config = service.get_kb_config(resolved_name)
         # Older clients may send back the full GET payload while editing a
         # retrieval setting. Preserve those no-op fields, but disallow rebinding.
         if any(
@@ -2147,18 +2150,17 @@ async def update_kb_config(kb_name: str, config: dict):
             )
         if "rag_provider" in config:
             requested_provider = _validate_registered_provider(config.get("rag_provider"))
-            service = get_kb_config_service()
-            current_config = service.get_kb_config(kb_name)
+            current_config = service.get_kb_config(resolved_name)
             current_provider = _validate_registered_provider(
                 current_config.get("rag_provider") or DEFAULT_PROVIDER
             )
             if requested_provider != current_provider:
-                kb_dir = _current_kb_base_dir() / kb_name
+                kb_dir = kb_base_dir / resolved_name
                 if kb_dir.exists() and has_ready_provider_index(kb_dir, current_provider):
                     raise HTTPException(
                         status_code=409,
                         detail=(
-                            f"Knowledge base '{kb_name}' already has a ready "
+                            f"Knowledge base '{resolved_name}' already has a ready "
                             f"{current_provider} index. Provider changes require "
                             "an explicit re-index/migration instead of a silent config edit."
                         ),
@@ -2175,11 +2177,13 @@ async def update_kb_config(kb_name: str, config: dict):
                     "timestamp": datetime.now().isoformat(),
                 }
             config["rag_provider"] = requested_provider
-        else:
-            service = get_kb_config_service()
 
-        service.set_kb_config(kb_name, config)
-        return {"status": "success", "kb_name": kb_name, "config": service.get_kb_config(kb_name)}
+        service.set_kb_config(resolved_name, config)
+        return {
+            "status": "success",
+            "kb_name": resolved_name,
+            "config": service.get_kb_config(resolved_name),
+        }
     except (HTTPException, AccessError):
         raise
     except Exception as e:
@@ -2716,32 +2720,30 @@ async def connect_kiwix_route(payload: ConnectKiwixRequest) -> dict[str, Any]:
     }
 
 
-@router.get("/knowledge-bases/kiwix-articles")
+@router.get("/knowledge-bases/{kb_ref}/articles")
 async def search_kiwix_articles(
-    kb_ref: str = Query(min_length=1, max_length=300),
+    kb_ref: str,
     q: str = Query(min_length=1, max_length=500),
+    k: int = Query(gt=0, lt=500, default=10),
 ) -> dict[str, Any]:
     """List bounded article matches for Knowledge Center and Reading import."""
     from deeptutor.multi_user.knowledge_access import resolve_kb_metadata
     from deeptutor.tools.rag_tool import rag_search
 
     entry = resolve_kb_metadata(kb_ref)
-    if not entry or entry.get("type") != "kiwix":
-        raise HTTPException(status_code=404, detail="Kiwix knowledge base not found.")
-    result = await rag_search(q, kb_ref, top_k=10)
+    if not entry or entry.get("type") == "subagent":
+        raise HTTPException(status_code=404, detail="knowledge base not found.")
+    result = await rag_search(q, kb_ref, top_k=k)
     if result.get("error_type"):
-        raise HTTPException(status_code=502, detail=result.get("answer") or "Kiwix search failed.")
-    return {
-        "articles": [
-            {
-                "title": source.get("title") or "",
-                "article_path": source.get("article_path") or "",
-                "excerpt": str(source.get("content") or "")[:500],
-            }
-            for source in result.get("sources") or []
-            if isinstance(source, dict) and source.get("article_path")
-        ]
-    }
+        raise HTTPException(status_code=502, detail=result.get("answer") or "Articles search failed.")
+    articles = [
+        source
+        for source in result.get("sources") or []
+        if isinstance(source, dict)
+    ]
+    if len(articles)==0:
+        articles = result.content.split('\n\n')
+    return { "articles": articles }
 
 
 class KnowledgeBaseSearchRequest(BaseModel):
@@ -2783,11 +2785,16 @@ async def search_knowledge_base(
         kwargs["document_keys"] = payload.document_keys
 
     try:
-        return await rag_search(
+        result = await rag_search(
             query,
             kb_name,
             **kwargs,
         )
+        if "content" in result and "answer" in result:
+            del result["content"]
+        if not payload.rewrite:
+            del result["query"]
+        return result
     except ValueError as exc:
         # rag_search raises ValueError when the KB is not accessible (or the
         # query is empty, which we already rejected above).

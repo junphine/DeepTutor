@@ -409,7 +409,7 @@ export default function KnowledgeBaseDetail({
                   onSave={(config) =>
                     kb.read_only
                       ? Promise.resolve()
-                      : onSaveConfig(kb.name, config)
+                      : onSaveConfig(knowledgeBaseRef(kb), config)
                   }
                 />
               )}

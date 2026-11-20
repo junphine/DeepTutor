@@ -324,9 +324,6 @@ def parse_remote(
     if source_path.suffix.lower() not in MINERU_SUPPORTED_FORMATS:
         raise MinerUError(f"Unsupported MinerU cloud input format: {source_path.suffix or 'none'}")
 
-    base_url = config.api_base_url.rstrip("/")
-    key_pool = KeyPool(config.api_keys)
-
     def report(message: str) -> None:
         if on_progress is None:
             return
@@ -378,7 +375,7 @@ def parse_remote(
     report("MinerU cloud: extracting archive")
     working_dir = output_base / source_path.stem
     logger.info("MinerU cloud parse complete: %s → %s", source_path.name, working_dir)
-    return working_dir
+    return working_dir / f'{source_path.stem}.md'
 
 def _pdf_page_count(source_path: Path) -> int | None:
     """Number of pages in a PDF, or ``None`` when pypdf cannot read it (e.g. a

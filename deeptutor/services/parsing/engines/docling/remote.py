@@ -67,6 +67,7 @@ def parse_remote(
     stem = source_path.stem
     (workdir / f"{stem}.md").write_text(markdown, encoding="utf-8")
     report(f"Docling server: wrote {stem}.md")
+    return workdir / f"{stem}.md"
 
 
 def remote_version(config: DoclingConfig) -> str:

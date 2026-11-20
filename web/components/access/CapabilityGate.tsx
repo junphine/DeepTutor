@@ -23,7 +23,7 @@ export default function CapabilityGate({
   const { modules, error, reload } = useModules();
   const { t } = useTranslation();
   if (error) return <button onClick={reload}>{t("Retry")}</button>;
-  if (!modules) return <div aria-busy="true">{t("Loading...")}</div>;
+  if (!modules) return <div aria-busy="true" className="space-y-3 px-3 py-4" >{t("Loading...")}</div>;
   if (!moduleRouteAvailable(pathname, modules)) {
     return <p className="p-6">{t("This module is not installed or is disabled.")}</p>;
   }

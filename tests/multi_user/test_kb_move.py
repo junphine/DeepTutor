@@ -110,6 +110,36 @@ def test_move_reports_name_conflict_without_touching_either_catalog(as_user):
             ).read_bytes() == b"destination"
 
 
+@pytest.mark.asyncio
+async def test_update_config_writes_to_the_kbs_workspace_not_the_account(as_user):
+    """``update_kb_config`` resolves a qualified id to its storage workspace.
+
+    The Knowledge Center lists a workspace's KBs under qualified ids (e.g.
+    ``workspace:<id>:kb:<name>``) while the request itself may be scoped to the
+    account library. Editing a description must land in the KB's own workspace
+    config, never a phantom entry in the account library.
+    """
+    from deeptutor.api.routers import knowledge
+
+    with as_user("alice"):
+        _make_kb("atlas", b"source-pixels")  # account KB
+        service = ContentWorkspaceService()
+        destination = service.create_workspace("Research")["workspace_id"]
+        with workspace_context(destination):
+            _make_kb("atlas", b"workspace-pixels")  # workspace KB (same name)
+
+        result = await knowledge.update_kb_config(
+            qualified_kb_id("atlas", destination), {"description": "workspace desc"}
+        )
+        assert result["status"] == "success"
+
+        account = current_kb_manager()._load_config()["knowledge_bases"]["atlas"]
+        assert account.get("description") == "an atlas"
+        with workspace_context(destination):
+            ws = current_kb_manager()._load_config()["knowledge_bases"]["atlas"]
+            assert ws["description"] == "workspace desc"
+
+
 def test_failed_publish_restores_source_destination_and_assignment(as_user, monkeypatch):
     from deeptutor.services.workspace import kb_move
 

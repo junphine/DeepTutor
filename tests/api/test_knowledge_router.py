@@ -286,6 +286,26 @@ def _write_ready_llamaindex_version(kb_dir: Path) -> None:
     )
 
 
+def _mock_update_config_resolution(monkeypatch, fake_service, base_dir: Path) -> None:
+    """Point ``update_kb_config``'s KB resolution + config service at a fake.
+
+    The route resolves the KB's storage workspace via ``_writable_kb`` and then
+    opens that workspace's config service, so both seams are patched here.
+    """
+    from deeptutor.services.config.knowledge_base_config import KnowledgeBaseConfigService
+
+    monkeypatch.setattr(
+        knowledge_router_module,
+        "_writable_kb",
+        lambda kb_name: (None, kb_name, base_dir),
+    )
+    monkeypatch.setattr(
+        KnowledgeBaseConfigService,
+        "get_instance",
+        lambda _path=None: fake_service,
+    )
+
+
 def test_rag_providers_lists_llamaindex_and_pageindex(monkeypatch) -> None:
     monkeypatch.setattr(ima_config_module, "is_ima_configured", lambda: True)
     with TestClient(_build_app()) as client:
@@ -2233,7 +2253,7 @@ def test_reindex_bypasses_existing_match_when_vectors_are_invalid(
     assert manager.config["knowledge_bases"]["bad-index-kb"]["status"] == "initializing"
 
 
-def test_update_config_coerces_legacy_provider_to_llamaindex() -> None:
+def test_update_config_coerces_legacy_provider_to_llamaindex(monkeypatch, tmp_path: Path) -> None:
     """Legacy `rag_provider` values are accepted and normalized to llamaindex."""
 
     class _FakeConfigService:
@@ -2248,12 +2268,10 @@ def test_update_config_coerces_legacy_provider_to_llamaindex() -> None:
             return self.config
 
     fake_service = _FakeConfigService()
-
-    config_module = importlib.import_module("deeptutor.services.config")
     app = _build_app()
 
     with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setattr(config_module, "get_kb_config_service", lambda: fake_service)
+        _mock_update_config_resolution(monkeypatch, fake_service, tmp_path)
         with TestClient(app) as client:
             response = client.put(
                 "/api/knowledge-bases/demo/config",
@@ -2264,7 +2282,7 @@ def test_update_config_coerces_legacy_provider_to_llamaindex() -> None:
     assert fake_service.config.get("rag_provider") == "llamaindex"
 
 
-def test_update_config_preserves_known_provider() -> None:
+def test_update_config_preserves_known_provider(monkeypatch, tmp_path: Path) -> None:
     class _FakeConfigService:
         def __init__(self) -> None:
             self.config: dict = {}
@@ -2277,12 +2295,10 @@ def test_update_config_preserves_known_provider() -> None:
             return self.config
 
     fake_service = _FakeConfigService()
-
-    config_module = importlib.import_module("deeptutor.services.config")
     app = _build_app()
 
     with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setattr(config_module, "get_kb_config_service", lambda: fake_service)
+        _mock_update_config_resolution(monkeypatch, fake_service, tmp_path)
         with TestClient(app) as client:
             response = client.put(
                 "/api/knowledge-bases/demo/config",
@@ -2310,10 +2326,8 @@ def test_update_config_rejects_provider_change_for_ready_index(monkeypatch, tmp_
             return dict(self.config)
 
     fake_service = _FakeConfigService()
-    config_module = importlib.import_module("deeptutor.services.config")
 
-    monkeypatch.setattr(config_module, "get_kb_config_service", lambda: fake_service)
-    monkeypatch.setattr(knowledge_router_module, "_current_kb_base_dir", lambda: tmp_path)
+    _mock_update_config_resolution(monkeypatch, fake_service, tmp_path)
 
     with TestClient(_build_app()) as client:
         response = client.put(

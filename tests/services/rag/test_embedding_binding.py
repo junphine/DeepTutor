@@ -596,7 +596,8 @@ async def test_old_full_config_updates_preserve_binding(catalog, tmp_path, monke
 
     write_entry(tmp_path)
     service = KnowledgeBaseConfigService(tmp_path / "kb_config.json")
-    monkeypatch.setattr(config, "get_kb_config_service", lambda: service)
+    monkeypatch.setattr(knowledge, "_writable_kb", lambda kb_name: (None, kb_name, tmp_path))
+    monkeypatch.setattr(KnowledgeBaseConfigService, "get_instance", lambda _path=None: service)
     payload = {**service.get_kb_config("kb"), "search_mode": "local"}
     assert (await knowledge.update_kb_config("kb", payload))["status"] == "success"
     assert read_entry(tmp_path)["embedding_selection"] == selection("a")
